@@ -387,6 +387,30 @@ pub fn mode(mode: Option<winit::window::Fullscreen>) -> window::Mode {
     }
 }
 
+/// Converts a ['window::ResizeDirection'] to a [´winit´] ResizeDirection
+pub fn resize_direction(
+    direction: window::ResizeDirection,
+) -> winit::window::ResizeDirection {
+    match direction {
+        window::ResizeDirection::East => winit::window::ResizeDirection::East,
+        window::ResizeDirection::North => winit::window::ResizeDirection::North,
+        window::ResizeDirection::NorthEast => {
+            winit::window::ResizeDirection::NorthEast
+        }
+        window::ResizeDirection::NorthWest => {
+            winit::window::ResizeDirection::NorthWest
+        }
+        window::ResizeDirection::South => winit::window::ResizeDirection::South,
+        window::ResizeDirection::SouthEast => {
+            winit::window::ResizeDirection::SouthEast
+        }
+        window::ResizeDirection::SouthWest => {
+            winit::window::ResizeDirection::SouthWest
+        }
+        window::ResizeDirection::West => winit::window::ResizeDirection::West,
+    }
+}
+
 /// Converts a [`mouse::Interaction`] to a [`winit`] cursor icon.
 ///
 /// [`winit`]: https://github.com/rust-windowing/winit
@@ -407,6 +431,10 @@ pub fn mouse_interaction(
             winit::window::CursorIcon::EwResize
         }
         Interaction::ResizingVertically => winit::window::CursorIcon::NsResize,
+        Interaction::ResizingNorthEast => winit::window::CursorIcon::NeResize,
+        Interaction::ResizingNorthWest => winit::window::CursorIcon::NwResize,
+        Interaction::ResizingSouthEast => winit::window::CursorIcon::SeResize,
+        Interaction::ResizingSouthWest => winit::window::CursorIcon::SwResize,
         Interaction::NotAllowed => winit::window::CursorIcon::NotAllowed,
         Interaction::ZoomIn => winit::window::CursorIcon::ZoomIn,
     }

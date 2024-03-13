@@ -4,6 +4,7 @@ mod action;
 pub mod screenshot;
 
 pub use action::Action;
+use iced_core::window::ResizeDirection;
 pub use screenshot::Screenshot;
 
 use crate::command::{self, Command};
@@ -54,6 +55,14 @@ pub fn close<Message>(id: Id) -> Command<Message> {
 /// Begins dragging the window while the left mouse button is held.
 pub fn drag<Message>(id: Id) -> Command<Message> {
     Command::single(command::Action::Window(Action::Drag(id)))
+}
+
+/// Begins resizing the window while the left mouse button is held.
+pub fn drag_resize<Message>(
+    id: Id,
+    direction: ResizeDirection,
+) -> Command<Message> {
+    Command::single(command::Action::Window(Action::DragResize(id, direction)))
 }
 
 /// Resizes the window to the given logical dimensions.

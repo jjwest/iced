@@ -758,6 +758,11 @@ pub fn run_command<A, C, E>(
                 window::Action::Drag(_id) => {
                     let _res = window.drag_window();
                 }
+                window::Action::DragResize(_id, direction) => {
+                    let _res = window.drag_resize_window(
+                        conversion::resize_direction(direction),
+                    );
+                }
                 window::Action::Spawn { .. } => {
                     log::warn!(
                         "Spawning a window is only available with \

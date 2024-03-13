@@ -12,6 +12,10 @@ pub enum Interaction {
     Grabbing,
     ResizingHorizontally,
     ResizingVertically,
+    ResizingNorthWest,
+    ResizingSouthWest,
+    ResizingNorthEast,
+    ResizingSouthEast,
     NotAllowed,
     ZoomIn,
 }

@@ -1,4 +1,6 @@
-use crate::core::window::{Icon, Id, Level, Mode, Settings, UserAttention};
+use crate::core::window::{
+    Icon, Id, Level, Mode, ResizeDirection, Settings, UserAttention,
+};
 use crate::core::{Point, Size};
 use crate::futures::MaybeSend;
 use crate::window::Screenshot;
@@ -19,6 +21,12 @@ pub enum Action<T> {
     /// There’s no guarantee that this will work unless the left mouse
     /// button was pressed immediately before this function is called.
     Drag(Id),
+    /// Move the window with the left mouse button until the button is
+    /// released.
+    ///
+    /// There’s no guarantee that this will work unless the left mouse
+    /// button was pressed immediately before this function is called.
+    DragResize(Id, ResizeDirection),
     /// Resize the window to the given logical dimensions.
     Resize(Id, Size),
     /// Fetch the current logical dimensions of the window.
@@ -124,6 +132,9 @@ impl<T> Action<T> {
             Self::Spawn(id, settings) => Action::Spawn(id, settings),
             Self::Close(id) => Action::Close(id),
             Self::Drag(id) => Action::Drag(id),
+            Self::DragResize(id, direction) => {
+                Action::DragResize(id, direction)
+            }
             Self::Resize(id, size) => Action::Resize(id, size),
             Self::FetchSize(id, o) => {
                 Action::FetchSize(id, Box::new(move |s| f(o(s))))
@@ -175,6 +186,9 @@ impl<T> fmt::Debug for Action<T> {
             }
             Self::Close(id) => write!(f, "Action::Close({id:?})"),
             Self::Drag(id) => write!(f, "Action::Drag({id:?})"),
+            Self::DragResize(id, direction) => {
+                write!(f, "Action::DragResize({id:?}, {direction:?})")
+            }
             Self::Resize(id, size) => {
                 write!(f, "Action::Resize({id:?}, {size:?})")
             }
