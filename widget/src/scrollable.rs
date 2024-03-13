@@ -353,7 +353,8 @@ where
         let (mouse_over_y_scrollbar, mouse_over_x_scrollbar) =
             scrollbars.is_mouse_over(cursor);
 
-        let mut event_status = {
+        let mut event_status = event::Status::Ignored;
+        if !state.scrollers_grabbed() {
             let cursor = match cursor_over_scrollable {
                 Some(cursor_position)
                     if !(mouse_over_x_scrollbar || mouse_over_y_scrollbar) =>
@@ -373,7 +374,7 @@ where
             let translation =
                 state.translation(self.direction, bounds, content_bounds);
 
-            self.content.as_widget_mut().on_event(
+            event_status = self.content.as_widget_mut().on_event(
                 &mut tree.children[0],
                 event.clone(),
                 content,
@@ -386,8 +387,8 @@ where
                     x: bounds.x + translation.x,
                     ..bounds
                 },
-            )
-        };
+            );
+        }
 
         if matches!(
             event,
