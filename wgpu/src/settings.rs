@@ -56,7 +56,7 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Settings {
         Settings {
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
             internal_backend: wgpu::Backends::all(),
             default_font: Font::default(),
             default_text_size: Pixels(16.0),
