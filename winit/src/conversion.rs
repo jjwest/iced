@@ -160,10 +160,10 @@ pub fn window_event(
             }))
         }
         WindowEvent::CursorEntered { .. } => {
-            Some(Event::Mouse(mouse::Event::CursorEntered))
+            Some(Event::Mouse(mouse::Event::CursorEntered(id)))
         }
         WindowEvent::CursorLeft { .. } => {
-            Some(Event::Mouse(mouse::Event::CursorLeft))
+            Some(Event::Mouse(mouse::Event::CursorLeft(id)))
         }
         WindowEvent::MouseInput { button, state, .. } => {
             let button = mouse_button(button);

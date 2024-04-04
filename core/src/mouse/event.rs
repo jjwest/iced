@@ -1,4 +1,4 @@
-use crate::Point;
+use crate::{window, Point};
 
 use super::Button;
 
@@ -11,10 +11,10 @@ use super::Button;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Event {
     /// The mouse cursor entered the window.
-    CursorEntered,
+    CursorEntered(window::Id),
 
     /// The mouse cursor left the window.
-    CursorLeft,
+    CursorLeft(window::Id),
 
     /// The mouse cursor was moved
     CursorMoved {
