@@ -16,6 +16,14 @@ pub struct Point<T = f32> {
 impl Point {
     /// The origin (i.e. a [`Point`] at (0, 0)).
     pub const ORIGIN: Self = Self::new(0.0, 0.0);
+
+    /// Round the point
+    pub fn rounded(self) -> Self {
+        Self {
+            x: self.x.round(),
+            y: self.y.round(),
+        }
+    }
 }
 
 impl<T: Num> Point<T> {

@@ -36,21 +36,21 @@ impl Path {
     /// and end points.
     pub fn line(from: Point, to: Point) -> Self {
         Self::new(|p| {
-            p.move_to(from);
-            p.line_to(to);
+            p.move_to(from.rounded());
+            p.line_to(to.rounded());
         })
     }
 
     /// Creates a new [`Path`] representing a rectangle given its top-left
     /// corner coordinate and its `Size`.
     pub fn rectangle(top_left: Point, size: Size) -> Self {
-        Self::new(|p| p.rectangle(top_left, size))
+        Self::new(|p| p.rectangle(top_left.rounded(), size))
     }
 
     /// Creates a new [`Path`] representing a circle given its center
     /// coordinate and its radius.
     pub fn circle(center: Point, radius: f32) -> Self {
-        Self::new(|p| p.circle(center, radius))
+        Self::new(|p| p.circle(center.rounded(), radius))
     }
 
     /// Returns the internal [`lyon_path::Path`].
