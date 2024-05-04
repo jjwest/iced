@@ -317,26 +317,14 @@ impl geometry::frame::Backend for Frame {
         let primitives = frame.into_primitives();
         let transformation = Transformation::translate(at.x, at.y);
 
-        let (text, meshes) = primitives
-            .into_iter()
-            .partition(|primitive| matches!(primitive, Primitive::Text { .. }));
-
         self.primitives.push(Primitive::Group {
-            primitives: vec![
-                Primitive::Transform {
-                    transformation,
-                    content: Box::new(Primitive::Group { primitives: meshes }),
-                },
-                Primitive::Transform {
-                    transformation,
-                    content: Box::new(Primitive::Clip {
-                        bounds: Rectangle::with_size(size),
-                        content: Box::new(Primitive::Group {
-                            primitives: text,
-                        }),
-                    }),
-                },
-            ],
+            primitives: vec![Primitive::Transform {
+                transformation,
+                content: Box::new(Primitive::Clip {
+                    bounds: Rectangle::with_size(size),
+                    content: Box::new(Primitive::Group { primitives }),
+                }),
+            }],
         });
     }
 
