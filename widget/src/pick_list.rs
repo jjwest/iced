@@ -58,7 +58,6 @@ where
     T: ToString + PartialEq + Clone,
     L: Borrow<[T]> + 'a,
     V: Borrow<T> + 'a,
-    Message: Clone,
     Theme: Catalog,
     Renderer: text::Renderer,
 {
@@ -179,7 +178,7 @@ where
     T: Clone + ToString + PartialEq + 'a,
     L: Borrow<[T]>,
     V: Borrow<T>,
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: Catalog + 'a,
     Renderer: text::Renderer + 'a,
 {
@@ -299,8 +298,8 @@ where
                     // bounds or on the drop-down, either way we close the overlay.
                     state.is_open = false;
 
-                    if let Some(on_close) = &self.on_close {
-                        shell.publish(on_close.clone());
+                    if let Some(on_close) = self.on_close.take() {
+                        shell.publish(on_close);
                     }
 
                     event::Status::Captured
@@ -314,8 +313,8 @@ where
                         .iter()
                         .position(|option| Some(option) == selected);
 
-                    if let Some(on_open) = &self.on_open {
-                        shell.publish(on_open.clone());
+                    if let Some(on_open) = self.on_open.take() {
+                        shell.publish(on_open);
                     }
 
                     event::Status::Captured
@@ -581,7 +580,7 @@ where
     T: Clone + ToString + PartialEq + 'a,
     L: Borrow<[T]> + 'a,
     V: Borrow<T> + 'a,
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: Catalog + 'a,
     Renderer: text::Renderer + 'a,
 {

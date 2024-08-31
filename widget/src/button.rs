@@ -152,7 +152,7 @@ struct State {
 impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for Button<'a, Message, Theme, Renderer>
 where
-    Message: 'a + Clone,
+    Message: 'a,
     Renderer: 'a + crate::core::Renderer,
     Theme: Catalog,
 {
@@ -258,7 +258,7 @@ where
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerLifted { .. }) => {
-                if let Some(on_press) = self.on_press.clone() {
+                if self.on_press.is_some() {
                     let state = tree.state.downcast_mut::<State>();
 
                     if state.is_pressed {
@@ -267,7 +267,7 @@ where
                         let bounds = layout.bounds();
 
                         if cursor.is_over(bounds) {
-                            shell.publish(on_press);
+                            shell.publish(self.on_press.take().unwrap());
                         }
 
                         return event::Status::Captured;
@@ -386,7 +386,7 @@ where
 impl<'a, Message, Theme, Renderer> From<Button<'a, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: Catalog + 'a,
     Renderer: crate::core::Renderer + 'a,
 {

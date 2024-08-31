@@ -84,7 +84,6 @@ pub const DEFAULT_PADDING: Padding = Padding::new(5.0);
 
 impl<'a, Message, Theme, Renderer> TextInput<'a, Message, Theme, Renderer>
 where
-    Message: Clone,
     Theme: Catalog,
     Renderer: text::Renderer,
 {
@@ -492,7 +491,6 @@ where
 impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for TextInput<'a, Message, Theme, Renderer>
 where
-    Message: Clone,
     Theme: Catalog,
     Renderer: text::Renderer,
 {
@@ -816,7 +814,7 @@ where
 
                     match key.as_ref() {
                         keyboard::Key::Named(key::Named::Enter) => {
-                            if let Some(on_submit) = self.on_submit.clone() {
+                            if let Some(on_submit) = self.on_submit.take() {
                                 shell.publish(on_submit);
                             }
                         }
@@ -1056,7 +1054,7 @@ where
 impl<'a, Message, Theme, Renderer> From<TextInput<'a, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: Catalog + 'a,
     Renderer: text::Renderer + 'a,
 {

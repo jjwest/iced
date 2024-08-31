@@ -178,7 +178,6 @@ pub fn radio<'a, Message, Theme, Renderer, V>(
     on_click: impl FnOnce(V) -> Message,
 ) -> Radio<'a, Message, Theme, Renderer>
 where
-    Message: Clone,
     Theme: radio::Catalog + 'a,
     Renderer: core::text::Renderer,
     V: Copy + Eq,
@@ -209,7 +208,6 @@ pub fn text_input<'a, Message, Theme, Renderer>(
     value: &str,
 ) -> TextInput<'a, Message, Theme, Renderer>
 where
-    Message: Clone,
     Theme: text_input::Catalog + 'a,
     Renderer: core::text::Renderer,
 {
@@ -223,7 +221,6 @@ pub fn text_editor<'a, Message, Theme, Renderer>(
     content: &'a text_editor::Content<Renderer>,
 ) -> TextEditor<'a, core::text::highlighter::PlainText, Message, Theme, Renderer>
 where
-    Message: Clone,
     Theme: text_editor::Catalog + 'a,
     Renderer: core::text::Renderer,
 {
@@ -240,7 +237,6 @@ pub fn slider<'a, T, Message, Theme>(
 ) -> Slider<'a, T, Message, Theme>
 where
     T: Copy + From<u8> + std::cmp::PartialOrd,
-    Message: Clone,
     Theme: slider::Catalog + 'a,
 {
     Slider::new(range, value, on_change)
@@ -256,7 +252,6 @@ pub fn vertical_slider<'a, T, Message, Theme>(
 ) -> VerticalSlider<'a, T, Message, Theme>
 where
     T: Copy + From<u8> + std::cmp::PartialOrd,
-    Message: Clone,
     Theme: vertical_slider::Catalog + 'a,
 {
     VerticalSlider::new(range, value, on_change)
@@ -274,7 +269,6 @@ where
     T: ToString + PartialEq + Clone + 'a,
     L: Borrow<[T]> + 'a,
     V: Borrow<T> + 'a,
-    Message: Clone,
     Theme: pick_list::Catalog + overlay::menu::Catalog,
     Renderer: core::text::Renderer,
 {

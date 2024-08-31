@@ -326,7 +326,6 @@ impl<'a, T, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for ComboBox<'a, T, Message, Theme, Renderer>
 where
     T: Display + Clone + 'static,
-    Message: Clone,
     Theme: Catalog,
     Renderer: text::Renderer,
 {
@@ -743,7 +742,7 @@ impl<'a, T, Message, Theme, Renderer>
     for Element<'a, Message, Theme, Renderer>
 where
     T: Display + Clone + 'static,
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: Catalog + 'a,
     Renderer: text::Renderer + 'a,
 {

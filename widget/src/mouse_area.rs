@@ -140,7 +140,6 @@ impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for MouseArea<'a, Message, Theme, Renderer>
 where
     Renderer: renderer::Renderer,
-    Message: Clone,
 {
     fn tag(&self) -> tree::Tag {
         tree::Tag::of::<State>()
@@ -282,7 +281,7 @@ where
 impl<'a, Message, Theme, Renderer> From<MouseArea<'a, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
-    Message: 'a + Clone,
+    Message: 'a,
     Theme: 'a,
     Renderer: 'a + renderer::Renderer,
 {
@@ -295,7 +294,7 @@ where
 
 /// Processes the given [`Event`] and updates the [`State`] of an [`MouseArea`]
 /// accordingly.
-fn update<Message: Clone, Theme, Renderer>(
+fn update<Message, Theme, Renderer>(
     widget: &mut MouseArea<'_, Message, Theme, Renderer>,
     tree: &mut Tree,
     event: Event,
@@ -316,16 +315,16 @@ fn update<Message: Clone, Theme, Renderer>(
             widget.on_move.as_ref(),
             widget.on_exit.as_ref(),
         ) {
-            (Some(on_enter), _, _) if state.is_hovered && !was_hovered => {
-                shell.publish(on_enter.clone());
+            (Some(_), _, _) if state.is_hovered && !was_hovered => {
+                shell.publish(widget.on_enter.take().unwrap());
             }
             (_, Some(on_move), _) if state.is_hovered => {
                 if let Some(position) = cursor.position_in(layout.bounds()) {
                     shell.publish(on_move(position));
                 }
             }
-            (_, _, Some(on_exit)) if !state.is_hovered && was_hovered => {
-                shell.publish(on_exit.clone());
+            (_, _, Some(_)) if !state.is_hovered && was_hovered => {
+                shell.publish(widget.on_exit.take().unwrap());
             }
             _ => {}
         }
@@ -335,64 +334,64 @@ fn update<Message: Clone, Theme, Renderer>(
         return event::Status::Ignored;
     }
 
-    if let Some(message) = widget.on_press.as_ref() {
+    if widget.on_press.is_some() {
         if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
         | Event::Touch(touch::Event::FingerPressed { .. }) = event
         {
-            shell.publish(message.clone());
+            shell.publish(widget.on_press.take().unwrap());
 
             return event::Status::Captured;
         }
     }
 
-    if let Some(message) = widget.on_release.as_ref() {
+    if widget.on_release.is_some() {
         if let Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
         | Event::Touch(touch::Event::FingerLifted { .. }) = event
         {
-            shell.publish(message.clone());
+            shell.publish(widget.on_release.take().unwrap());
 
             return event::Status::Captured;
         }
     }
 
-    if let Some(message) = widget.on_right_press.as_ref() {
+    if widget.on_right_press.is_some() {
         if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) =
             event
         {
-            shell.publish(message.clone());
+            shell.publish(widget.on_right_press.take().unwrap());
 
             return event::Status::Captured;
         }
     }
 
-    if let Some(message) = widget.on_right_release.as_ref() {
+    if widget.on_right_release.is_some() {
         if let Event::Mouse(mouse::Event::ButtonReleased(
             mouse::Button::Right,
         )) = event
         {
-            shell.publish(message.clone());
+            shell.publish(widget.on_right_release.take().unwrap());
 
             return event::Status::Captured;
         }
     }
 
-    if let Some(message) = widget.on_middle_press.as_ref() {
+    if widget.on_middle_press.is_some() {
         if let Event::Mouse(mouse::Event::ButtonPressed(
             mouse::Button::Middle,
         )) = event
         {
-            shell.publish(message.clone());
+            shell.publish(widget.on_middle_press.take().unwrap());
 
             return event::Status::Captured;
         }
     }
 
-    if let Some(message) = widget.on_middle_release.as_ref() {
+    if widget.on_middle_release.is_some() {
         if let Event::Mouse(mouse::Event::ButtonReleased(
             mouse::Button::Middle,
         )) = event
         {
-            shell.publish(message.clone());
+            shell.publish(widget.on_middle_release.take().unwrap());
 
             return event::Status::Captured;
         }

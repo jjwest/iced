@@ -59,7 +59,6 @@ where
 impl<'a, T, Message, Theme> VerticalSlider<'a, T, Message, Theme>
 where
     T: Copy + From<u8> + std::cmp::PartialOrd,
-    Message: Clone,
     Theme: Catalog,
 {
     /// The default width of a [`VerticalSlider`].
@@ -171,7 +170,6 @@ impl<'a, T, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for VerticalSlider<'a, T, Message, Theme>
 where
     T: Copy + Into<f64> + num_traits::FromPrimitive,
-    Message: Clone,
     Theme: Catalog,
     Renderer: core::Renderer,
 {
@@ -312,7 +310,7 @@ where
             | Event::Touch(touch::Event::FingerLifted { .. })
             | Event::Touch(touch::Event::FingerLost { .. }) => {
                 if is_dragging {
-                    if let Some(on_release) = self.on_release.clone() {
+                    if let Some(on_release) = self.on_release.take() {
                         shell.publish(on_release);
                     }
                     state.is_dragging = false;
@@ -478,7 +476,7 @@ impl<'a, T, Message, Theme, Renderer>
     for Element<'a, Message, Theme, Renderer>
 where
     T: Copy + Into<f64> + num_traits::FromPrimitive + 'a,
-    Message: Clone + 'a,
+    Message: 'a,
     Theme: Catalog + 'a,
     Renderer: core::Renderer + 'a,
 {

@@ -73,7 +73,7 @@ where
     Renderer: text::Renderer,
 {
     is_selected: bool,
-    on_click: Message,
+    on_click: Option<Message>,
     label: String,
     width: Length,
     size: f32,
@@ -87,7 +87,6 @@ where
 
 impl<'a, Message, Theme, Renderer> Radio<'a, Message, Theme, Renderer>
 where
-    Message: Clone,
     Theme: Catalog,
     Renderer: text::Renderer,
 {
@@ -117,7 +116,7 @@ where
     {
         Radio {
             is_selected: Some(value) == selected,
-            on_click: f(value),
+            on_click: Some(f(value)),
             label: label.into(),
             width: Length::Shrink,
             size: Self::DEFAULT_SIZE,
@@ -197,7 +196,6 @@ where
 impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for Radio<'a, Message, Theme, Renderer>
 where
-    Message: Clone,
     Theme: Catalog,
     Renderer: text::Renderer,
 {
@@ -264,7 +262,9 @@ where
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
                 if cursor.is_over(layout.bounds()) {
-                    shell.publish(self.on_click.clone());
+                    if let Some(on_click) = self.on_click.take() {
+                        shell.publish(on_click);
+                    }
 
                     return event::Status::Captured;
                 }
@@ -370,7 +370,7 @@ where
 impl<'a, Message, Theme, Renderer> From<Radio<'a, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
-    Message: 'a + Clone,
+    Message: 'a,
     Theme: 'a + Catalog,
     Renderer: 'a + text::Renderer,
 {
