@@ -439,14 +439,14 @@
 //!                     }
 //!                  }
 //!             } else {
-//!                 Task::none()    
+//!                 Task::none()
 //!             }
 //!         }
 //!         Message::Conversation(message) => {
 //!             if let Screen::Conversation(conversation) = &mut state.screen {
 //!                 conversation.update(message).map(Message::Conversation)
 //!             } else {
-//!                 Task::none()    
+//!                 Task::none()
 //!             }
 //!         }
 //!     }
@@ -585,6 +585,8 @@ pub mod mouse {
     pub use crate::core::mouse::{
         Button, Cursor, Event, Interaction, ScrollDelta,
     };
+
+    pub use crate::runtime::mouse::get_position;
 }
 
 #[cfg(feature = "system")]

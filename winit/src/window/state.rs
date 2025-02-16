@@ -19,6 +19,7 @@ where
     viewport: Viewport,
     viewport_version: u64,
     cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
+    last_cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     modifiers: winit::keyboard::ModifiersState,
     theme: P::Theme,
     style: theme::Style,
@@ -70,6 +71,7 @@ where
             viewport,
             viewport_version: 0,
             cursor_position: None,
+            last_cursor_position: None,
             modifiers: winit::keyboard::ModifiersState::default(),
             theme,
             style,
@@ -166,10 +168,18 @@ where
             | WindowEvent::Touch(Touch {
                 location: position, ..
             }) => {
+                self.last_cursor_position = self.cursor_position;
                 self.cursor_position = Some(*position);
             }
             WindowEvent::CursorLeft { .. } => {
-                self.cursor_position = None;
+                self.last_cursor_position = self.cursor_position.take();
+            }
+            WindowEvent::Focused(has_focus) => {
+                if *has_focus {
+                    self.cursor_position = self.last_cursor_position;
+                } else {
+                    self.last_cursor_position = self.cursor_position.take();
+                }
             }
             WindowEvent::ModifiersChanged(new_modifiers) => {
                 self.modifiers = new_modifiers.state();

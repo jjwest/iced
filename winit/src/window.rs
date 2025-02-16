@@ -55,6 +55,7 @@ where
         program: &program::Instance<P>,
         compositor: &mut C,
         exit_on_close_request: bool,
+        is_visible: bool,
     ) -> &mut Window<P, C> {
         let state = State::new(program, id, &window);
         let viewport_version = state.viewport_version();
@@ -81,6 +82,7 @@ where
                 redraw_at: None,
                 preedit: None,
                 ime_state: None,
+                visible: is_visible,
             },
         );
 
@@ -173,6 +175,7 @@ where
     pub redraw_at: Option<Instant>,
     preedit: Option<Preedit<P::Renderer>>,
     ime_state: Option<(Point, input_method::Purpose)>,
+    pub visible: bool,
 }
 
 impl<P, C> Window<P, C>

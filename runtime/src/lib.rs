@@ -12,6 +12,7 @@
 pub mod clipboard;
 pub mod font;
 pub mod keyboard;
+pub mod mouse;
 pub mod overlay;
 pub mod system;
 pub mod task;
@@ -53,6 +54,9 @@ pub enum Action<T> {
     /// Run a window action.
     Window(window::Action),
 
+    /// Run a mouse action.
+    Mouse(mouse::Action),
+
     /// Run a system action.
     System(system::Action),
 
@@ -78,6 +82,7 @@ impl<T> Action<T> {
             Action::Widget(operation) => Err(Action::Widget(operation)),
             Action::Clipboard(action) => Err(Action::Clipboard(action)),
             Action::Window(action) => Err(Action::Window(action)),
+            Action::Mouse(action) => Err(Action::Mouse(action)),
             Action::System(action) => Err(Action::System(action)),
             Action::Exit => Err(Action::Exit),
         }
@@ -101,6 +106,7 @@ where
                 write!(f, "Action::Clipboard({action:?})")
             }
             Action::Window(_) => write!(f, "Action::Window"),
+            Action::Mouse(_) => write!(f, "Action::Mouse"),
             Action::System(action) => write!(f, "Action::System({action:?})"),
             Action::Exit => write!(f, "Action::Exit"),
         }
