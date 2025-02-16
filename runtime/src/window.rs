@@ -46,6 +46,9 @@ pub enum Action {
     /// Resize the window to the given logical dimensions.
     Resize(Id, Size),
 
+    // /// Resize the window to the smallest size capable of displaying
+    // /// the latest interface
+    // ResizeMinimum(Id),
     /// Get the current logical dimensions of the window.
     GetSize(Id, oneshot::Sender<Size>),
 
