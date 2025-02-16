@@ -683,6 +683,7 @@ async fn run_instance<P, C>(
                         .as_mut()
                         .expect("Compositor must be initialized"),
                     exit_on_close_request,
+                    make_visible,
                 );
 
                 let logical_size = window.state.logical_size();
@@ -897,6 +898,16 @@ async fn run_instance<P, C>(
                                 debug.render_finished();
                             }
                             Err(error) => match error {
+                                compositor::SurfaceError::Outdated => {
+                                    if window.visible {
+                                        compositor.configure_surface(
+                                            &mut window.surface,
+                                            physical_size.width,
+                                            physical_size.height,
+                                        );
+                                        window.raw.request_redraw();
+                                    }
+                                }
                                 // This is an unrecoverable error.
                                 compositor::SurfaceError::OutOfMemory => {
                                     panic!("{:?}", error);
@@ -1389,7 +1400,9 @@ fn run_action<P, C>(
             }
             window::Action::SetMode(id, mode) => {
                 if let Some(window) = window_manager.get_mut(id) {
-                    window.raw.set_visible(conversion::visible(mode));
+                    let visible = conversion::visible(mode);
+                    window.visible = visible;
+                    window.raw.set_visible(visible);
                     window.raw.set_fullscreen(conversion::fullscreen(
                         window.raw.current_monitor(),
                         mode,
@@ -1497,6 +1510,35 @@ fn run_action<P, C>(
                 if let Some(window) = window_manager.get_mut(id) {
                     let _ = window.raw.set_cursor_hittest(true);
                 }
+            }
+        },
+        Action::Mouse(action) => match action {
+            iced_runtime::mouse::Action::GetPosition(channel) => {
+                let output = window_manager
+                    .iter_mut()
+                    .filter_map(|(_id, window)| {
+                        if let mouse::Cursor::Available(point) =
+                            window.state.cursor()
+                        {
+                            if let Some(position) = window.position() {
+                                let size = window.size();
+                                if point.x >= 0.0
+                                    && point.x <= size.width
+                                    && point.y >= 0.0
+                                    && point.y <= size.height
+                                {
+                                    let global_pos = Point::new(
+                                        point.x + position.x,
+                                        point.y + position.y,
+                                    );
+                                    return Some(global_pos);
+                                }
+                            }
+                        }
+                        None
+                    })
+                    .next();
+                let _ = channel.send(output);
             }
         },
         Action::System(action) => match action {
