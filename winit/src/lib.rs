@@ -40,7 +40,6 @@ pub use clipboard::Clipboard;
 pub use error::Error;
 pub use proxy::Proxy;
 
-use crate::core::mouse;
 use crate::core::renderer;
 use crate::core::theme;
 use crate::core::time::Instant;
@@ -52,7 +51,7 @@ use crate::futures::futures::task;
 use crate::futures::futures::{Future, StreamExt};
 use crate::futures::subscription;
 use crate::futures::{Executor, Runtime};
-use crate::graphics::{Compositor, compositor};
+use crate::graphics::{compositor, Compositor};
 use crate::runtime::user_interface::{self, UserInterface};
 use crate::runtime::{Action, Task};
 
@@ -532,7 +531,11 @@ async fn run_instance<P>(
 
                         async move {
                             let mut compositor =
-                                <P::Renderer as compositor::Default>::Compositor::new(graphics_settings, window).await;
+                                <P::Renderer as compositor::Default>::Compositor::new(
+                                    graphics_settings,
+                                    window,
+                                )
+                                .await;
 
                             if let Ok(compositor) = &mut compositor {
                                 for font in default_fonts {
@@ -595,6 +598,7 @@ async fn run_instance<P>(
                         .as_mut()
                         .expect("Compositor must be initialized"),
                     exit_on_close_request,
+                    make_visible,
                 );
 
                 let logical_size = window.state.logical_size();
@@ -1096,6 +1100,7 @@ fn run_action<P, C>(
     P::Theme: theme::Base,
 {
     use crate::runtime::clipboard;
+    use crate::runtime::mouse;
     use crate::runtime::system;
     use crate::runtime::window;
 
@@ -1338,7 +1343,7 @@ fn run_action<P, C>(
             }
             window::Action::ShowSystemMenu(id) => {
                 if let Some(window) = window_manager.get_mut(id) {
-                    if let mouse::Cursor::Available(point) =
+                    if let crate::core::mouse::Cursor::Available(point) =
                         window.state.cursor()
                     {
                         window.raw.show_window_menu(
@@ -1391,6 +1396,35 @@ fn run_action<P, C>(
                 if let Some(window) = window_manager.get_mut(id) {
                     let _ = window.raw.set_cursor_hittest(true);
                 }
+            }
+        },
+        Action::Mouse(action) => match action {
+            mouse::Action::GetPosition(channel) => {
+                let output = window_manager
+                    .iter_mut()
+                    .filter_map(|(_id, window)| {
+                        if let core::mouse::Cursor::Available(point) =
+                            window.state.cursor()
+                        {
+                            if let Some(position) = window.position() {
+                                let size = window.size();
+                                if point.x >= 0.0
+                                    && point.x <= size.width
+                                    && point.y >= 0.0
+                                    && point.y <= size.height
+                                {
+                                    let global_pos = Point::new(
+                                        point.x + position.x,
+                                        point.y + position.y,
+                                    );
+                                    return Some(global_pos);
+                                }
+                            }
+                        }
+                        None
+                    })
+                    .next();
+                let _ = channel.send(output);
             }
         },
         Action::System(action) => match action {
