@@ -438,7 +438,7 @@ where
                 },
                 |limits| {
                     let child_limits = layout::Limits::new(
-                        Size::new(limits.min().width, limits.min().height),
+                        limits.min(),
                         Size::new(
                             if self.direction.horizontal().is_some() {
                                 f32::INFINITY
@@ -798,12 +798,11 @@ where
                     },
                 );
 
-                if !had_input_method {
-                    if let InputMethod::Enabled { position, .. } =
+                if !had_input_method
+                    && let InputMethod::Enabled { position, .. } =
                         shell.input_method_mut()
-                    {
-                        *position = *position - translation;
-                    }
+                {
+                    *position = *position - translation;
                 }
             };
 
@@ -1091,23 +1090,22 @@ where
                         );
                     }
 
-                    if let Some(scroller) = scrollbar.scroller {
-                        if scroller.bounds.width > 0.0
-                            && scroller.bounds.height > 0.0
-                            && (style.scroller.color != Color::TRANSPARENT
-                                || (style.scroller.border.color
-                                    != Color::TRANSPARENT
-                                    && style.scroller.border.width > 0.0))
-                        {
-                            renderer.fill_quad(
-                                renderer::Quad {
-                                    bounds: scroller.bounds,
-                                    border: style.scroller.border,
-                                    ..renderer::Quad::default()
-                                },
-                                style.scroller.color,
-                            );
-                        }
+                    if let Some(scroller) = scrollbar.scroller
+                        && scroller.bounds.width > 0.0
+                        && scroller.bounds.height > 0.0
+                        && (style.scroller.color != Color::TRANSPARENT
+                            || (style.scroller.border.color
+                                != Color::TRANSPARENT
+                                && style.scroller.border.width > 0.0))
+                    {
+                        renderer.fill_quad(
+                            renderer::Quad {
+                                bounds: scroller.bounds,
+                                border: style.scroller.border,
+                                ..renderer::Quad::default()
+                            },
+                            style.scroller.color,
+                        );
                     }
                 };
 
@@ -1633,20 +1631,24 @@ impl State {
     ) -> Vector {
         Vector::new(
             if let Some(horizontal) = direction.horizontal() {
-                self.offset_x.translation(
-                    bounds.width,
-                    content_bounds.width,
-                    horizontal.alignment,
-                )
+                self.offset_x
+                    .translation(
+                        bounds.width,
+                        content_bounds.width,
+                        horizontal.alignment,
+                    )
+                    .round()
             } else {
                 0.0
             },
             if let Some(vertical) = direction.vertical() {
-                self.offset_y.translation(
-                    bounds.height,
-                    content_bounds.height,
-                    vertical.alignment,
-                )
+                self.offset_y
+                    .translation(
+                        bounds.height,
+                        content_bounds.height,
+                        vertical.alignment,
+                    )
+                    .round()
             } else {
                 0.0
             },
@@ -2065,7 +2067,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
         background: Some(palette.background.weak.color.into()),
         border: border::rounded(2),
         scroller: Scroller {
-            color: palette.background.strong.color,
+            color: palette.background.strongest.color,
             border: border::rounded(2),
         },
     };
