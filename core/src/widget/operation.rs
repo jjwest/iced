@@ -18,25 +18,16 @@ use std::sync::Arc;
 /// A piece of logic that can traverse the widget tree of an application in
 /// order to query or update some widget state.
 pub trait Operation<T = ()>: Send {
-    /// Operates on a widget that contains other widgets.
+    /// Requests further traversal of the widget tree to keep operating.
     ///
-    /// The `operate_on_children` function can be called to return control to
-    /// the widget tree and keep traversing it.
-    fn container(
-        &mut self,
-        id: Option<&Id>,
-        bounds: Rectangle,
-        operate_on_children: &mut dyn FnMut(&mut dyn Operation<T>),
-    );
+    /// The provided `operate` closure may be called by an [`Operation`]
+    /// to return control to the widget tree and keep traversing it. If
+    /// the closure is not called, the children of the widget asking for
+    /// traversal will be skipped.
+    fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<T>));
 
-    /// Operates on a widget that can be focused.
-    fn focusable(
-        &mut self,
-        _id: Option<&Id>,
-        _bounds: Rectangle,
-        _state: &mut dyn Focusable,
-    ) {
-    }
+    /// Operates on a widget that contains other widgets.
+    fn container(&mut self, _id: Option<&Id>, _bounds: Rectangle) {}
 
     /// Operates on a widget that can be scrolled.
     fn scrollable(
@@ -49,26 +40,17 @@ pub trait Operation<T = ()>: Send {
     ) {
     }
 
+    /// Operates on a widget that can be focused.
+    fn focusable(&mut self, _id: Option<&Id>, _bounds: Rectangle, _state: &mut dyn Focusable) {}
+
     /// Operates on a widget that has text input.
-    fn text_input(
-        &mut self,
-        _id: Option<&Id>,
-        _bounds: Rectangle,
-        _state: &mut dyn TextInput,
-    ) {
-    }
+    fn text_input(&mut self, _id: Option<&Id>, _bounds: Rectangle, _state: &mut dyn TextInput) {}
 
     /// Operates on a widget that contains some text.
     fn text(&mut self, _id: Option<&Id>, _bounds: Rectangle, _text: &str) {}
 
     /// Operates on a custom widget with some state.
-    fn custom(
-        &mut self,
-        _id: Option<&Id>,
-        _bounds: Rectangle,
-        _state: &mut dyn Any,
-    ) {
-    }
+    fn custom(&mut self, _id: Option<&Id>, _bounds: Rectangle, _state: &mut dyn Any) {}
 
     /// Finishes the [`Operation`] and returns its [`Outcome`].
     fn finish(&self) -> Outcome<T> {
@@ -80,21 +62,15 @@ impl<T, O> Operation<O> for Box<T>
 where
     T: Operation<O> + ?Sized,
 {
-    fn container(
-        &mut self,
-        id: Option<&Id>,
-        bounds: Rectangle,
-        operate_on_children: &mut dyn FnMut(&mut dyn Operation<O>),
-    ) {
-        self.as_mut().container(id, bounds, operate_on_children);
+    fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<O>)) {
+        self.as_mut().traverse(operate);
     }
 
-    fn focusable(
-        &mut self,
-        id: Option<&Id>,
-        bounds: Rectangle,
-        state: &mut dyn Focusable,
-    ) {
+    fn container(&mut self, id: Option<&Id>, bounds: Rectangle) {
+        self.as_mut().container(id, bounds);
+    }
+
+    fn focusable(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn Focusable) {
         self.as_mut().focusable(id, bounds, state);
     }
 
@@ -106,21 +82,11 @@ where
         translation: Vector,
         state: &mut dyn Scrollable,
     ) {
-        self.as_mut().scrollable(
-            id,
-            bounds,
-            content_bounds,
-            translation,
-            state,
-        );
+        self.as_mut()
+            .scrollable(id, bounds, content_bounds, translation, state);
     }
 
-    fn text_input(
-        &mut self,
-        id: Option<&Id>,
-        bounds: Rectangle,
-        state: &mut dyn TextInput,
-    ) {
+    fn text_input(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn TextInput) {
         self.as_mut().text_input(id, bounds, state);
     }
 
@@ -128,12 +94,7 @@ where
         self.as_mut().text(id, bounds, text);
     }
 
-    fn custom(
-        &mut self,
-        id: Option<&Id>,
-        bounds: Rectangle,
-        state: &mut dyn Any,
-    ) {
+    fn custom(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn Any) {
         self.as_mut().custom(id, bounds, state);
     }
 
@@ -168,9 +129,7 @@ where
 }
 
 /// Wraps the [`Operation`] in a black box, erasing its returning type.
-pub fn black_box<'a, T, O>(
-    operation: &'a mut dyn Operation<T>,
-) -> impl Operation<O> + 'a
+pub fn black_box<'a, T, O>(operation: &'a mut dyn Operation<T>) -> impl Operation<O> + 'a
 where
     T: 'a,
 {
@@ -179,23 +138,20 @@ where
     }
 
     impl<T, O> Operation<O> for BlackBox<'_, T> {
-        fn container(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            operate_on_children: &mut dyn FnMut(&mut dyn Operation<O>),
-        ) {
-            self.operation.container(id, bounds, &mut |operation| {
-                operate_on_children(&mut BlackBox { operation });
+        fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<O>))
+        where
+            Self: Sized,
+        {
+            self.operation.traverse(&mut |operation| {
+                operate(&mut BlackBox { operation });
             });
         }
 
-        fn focusable(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            state: &mut dyn Focusable,
-        ) {
+        fn container(&mut self, id: Option<&Id>, bounds: Rectangle) {
+            self.operation.container(id, bounds);
+        }
+
+        fn focusable(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn Focusable) {
             self.operation.focusable(id, bounds, state);
         }
 
@@ -207,21 +163,11 @@ where
             translation: Vector,
             state: &mut dyn Scrollable,
         ) {
-            self.operation.scrollable(
-                id,
-                bounds,
-                content_bounds,
-                translation,
-                state,
-            );
+            self.operation
+                .scrollable(id, bounds, content_bounds, translation, state);
         }
 
-        fn text_input(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            state: &mut dyn TextInput,
-        ) {
+        fn text_input(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn TextInput) {
             self.operation.text_input(id, bounds, state);
         }
 
@@ -229,12 +175,7 @@ where
             self.operation.text(id, bounds, text);
         }
 
-        fn custom(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            state: &mut dyn Any,
-        ) {
+        fn custom(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn Any) {
             self.operation.custom(id, bounds, state);
         }
 
@@ -255,7 +196,6 @@ where
     A: 'static,
     B: 'static,
 {
-    #[allow(missing_debug_implementations)]
     struct Map<O, A, B> {
         operation: O,
         f: Arc<dyn Fn(A) -> B + Send + Sync>,
@@ -267,28 +207,22 @@ where
         A: 'static,
         B: 'static,
     {
-        fn container(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            operate_on_children: &mut dyn FnMut(&mut dyn Operation<B>),
-        ) {
+        fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<B>)) {
             struct MapRef<'a, A> {
                 operation: &'a mut dyn Operation<A>,
             }
 
             impl<A, B> Operation<B> for MapRef<'_, A> {
-                fn container(
-                    &mut self,
-                    id: Option<&Id>,
-                    bounds: Rectangle,
-                    operate_on_children: &mut dyn FnMut(&mut dyn Operation<B>),
-                ) {
+                fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<B>)) {
+                    self.operation.traverse(&mut |operation| {
+                        operate(&mut MapRef { operation });
+                    });
+                }
+
+                fn container(&mut self, id: Option<&Id>, bounds: Rectangle) {
                     let Self { operation, .. } = self;
 
-                    operation.container(id, bounds, &mut |operation| {
-                        operate_on_children(&mut MapRef { operation });
-                    });
+                    operation.container(id, bounds);
                 }
 
                 fn scrollable(
@@ -299,13 +233,8 @@ where
                     translation: Vector,
                     state: &mut dyn Scrollable,
                 ) {
-                    self.operation.scrollable(
-                        id,
-                        bounds,
-                        content_bounds,
-                        translation,
-                        state,
-                    );
+                    self.operation
+                        .scrollable(id, bounds, content_bounds, translation, state);
                 }
 
                 fn focusable(
@@ -326,36 +255,25 @@ where
                     self.operation.text_input(id, bounds, state);
                 }
 
-                fn text(
-                    &mut self,
-                    id: Option<&Id>,
-                    bounds: Rectangle,
-                    text: &str,
-                ) {
+                fn text(&mut self, id: Option<&Id>, bounds: Rectangle, text: &str) {
                     self.operation.text(id, bounds, text);
                 }
 
-                fn custom(
-                    &mut self,
-                    id: Option<&Id>,
-                    bounds: Rectangle,
-                    state: &mut dyn Any,
-                ) {
+                fn custom(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn Any) {
                     self.operation.custom(id, bounds, state);
                 }
             }
 
-            let Self { operation, .. } = self;
-
-            MapRef { operation }.container(id, bounds, operate_on_children);
+            self.operation.traverse(&mut |operation| {
+                operate(&mut MapRef { operation });
+            });
         }
 
-        fn focusable(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            state: &mut dyn Focusable,
-        ) {
+        fn container(&mut self, id: Option<&Id>, bounds: Rectangle) {
+            self.operation.container(id, bounds);
+        }
+
+        fn focusable(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn Focusable) {
             self.operation.focusable(id, bounds, state);
         }
 
@@ -367,21 +285,11 @@ where
             translation: Vector,
             state: &mut dyn Scrollable,
         ) {
-            self.operation.scrollable(
-                id,
-                bounds,
-                content_bounds,
-                translation,
-                state,
-            );
+            self.operation
+                .scrollable(id, bounds, content_bounds, translation, state);
         }
 
-        fn text_input(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            state: &mut dyn TextInput,
-        ) {
+        fn text_input(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn TextInput) {
             self.operation.text_input(id, bounds, state);
         }
 
@@ -389,12 +297,7 @@ where
             self.operation.text(id, bounds, text);
         }
 
-        fn custom(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            state: &mut dyn Any,
-        ) {
+        fn custom(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn Any) {
             self.operation.custom(id, bounds, state);
         }
 
@@ -418,10 +321,7 @@ where
 
 /// Chains the output of an [`Operation`] with the provided function to
 /// build a new [`Operation`].
-pub fn then<A, B, O>(
-    operation: impl Operation<A> + 'static,
-    f: fn(A) -> O,
-) -> impl Operation<B>
+pub fn then<A, B, O>(operation: impl Operation<A> + 'static, f: fn(A) -> O) -> impl Operation<B>
 where
     A: 'static,
     B: Send + 'static,
@@ -444,23 +344,17 @@ where
         A: 'static,
         B: Send + 'static,
     {
-        fn container(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            operate_on_children: &mut dyn FnMut(&mut dyn Operation<B>),
-        ) {
-            self.operation.container(id, bounds, &mut |operation| {
-                operate_on_children(&mut black_box(operation));
+        fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<B>)) {
+            self.operation.traverse(&mut |operation| {
+                operate(&mut black_box(operation));
             });
         }
 
-        fn focusable(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            state: &mut dyn Focusable,
-        ) {
+        fn container(&mut self, id: Option<&Id>, bounds: Rectangle) {
+            self.operation.container(id, bounds);
+        }
+
+        fn focusable(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn Focusable) {
             self.operation.focusable(id, bounds, state);
         }
 
@@ -472,21 +366,11 @@ where
             translation: crate::Vector,
             state: &mut dyn Scrollable,
         ) {
-            self.operation.scrollable(
-                id,
-                bounds,
-                content_bounds,
-                translation,
-                state,
-            );
+            self.operation
+                .scrollable(id, bounds, content_bounds, translation, state);
         }
 
-        fn text_input(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            state: &mut dyn TextInput,
-        ) {
+        fn text_input(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn TextInput) {
             self.operation.text_input(id, bounds, state);
         }
 
@@ -494,24 +378,15 @@ where
             self.operation.text(id, bounds, text);
         }
 
-        fn custom(
-            &mut self,
-            id: Option<&Id>,
-            bounds: Rectangle,
-            state: &mut dyn Any,
-        ) {
+        fn custom(&mut self, id: Option<&Id>, bounds: Rectangle, state: &mut dyn Any) {
             self.operation.custom(id, bounds, state);
         }
 
         fn finish(&self) -> Outcome<B> {
             match self.operation.finish() {
                 Outcome::None => Outcome::None,
-                Outcome::Some(value) => {
-                    Outcome::Chain(Box::new((self.next)(value)))
-                }
-                Outcome::Chain(operation) => {
-                    Outcome::Chain(Box::new(then(operation, self.next)))
-                }
+                Outcome::Some(value) => Outcome::Chain(Box::new((self.next)(value))),
+                Outcome::Chain(operation) => Outcome::Chain(Box::new(then(operation, self.next))),
             }
         }
     }
@@ -525,37 +400,35 @@ where
 
 /// Produces an [`Operation`] that applies the given [`Operation`] to the
 /// children of a container with the given [`Id`].
-pub fn scope<T: 'static>(
-    target: Id,
-    operation: impl Operation<T> + 'static,
-) -> impl Operation<T> {
+pub fn scope<T: 'static>(target: Id, operation: impl Operation<T> + 'static) -> impl Operation<T> {
     struct ScopedOperation<Message> {
         target: Id,
+        current: Option<Id>,
         operation: Box<dyn Operation<Message>>,
     }
 
     impl<Message: 'static> Operation<Message> for ScopedOperation<Message> {
-        fn container(
-            &mut self,
-            id: Option<&Id>,
-            _bounds: Rectangle,
-            operate_on_children: &mut dyn FnMut(&mut dyn Operation<Message>),
-        ) {
-            if id == Some(&self.target) {
-                operate_on_children(self.operation.as_mut());
+        fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<Message>)) {
+            if self.current.as_ref() == Some(&self.target) {
+                self.operation.as_mut().traverse(operate);
             } else {
-                operate_on_children(self);
+                operate(self);
             }
+
+            self.current = None;
+        }
+
+        fn container(&mut self, id: Option<&Id>, _bounds: Rectangle) {
+            self.current = id.cloned();
         }
 
         fn finish(&self) -> Outcome<Message> {
             match self.operation.finish() {
-                Outcome::Chain(next) => {
-                    Outcome::Chain(Box::new(ScopedOperation {
-                        target: self.target.clone(),
-                        operation: next,
-                    }))
-                }
+                Outcome::Chain(next) => Outcome::Chain(Box::new(ScopedOperation {
+                    target: self.target.clone(),
+                    current: None,
+                    operation: next,
+                })),
                 outcome => outcome,
             }
         }
@@ -563,6 +436,7 @@ pub fn scope<T: 'static>(
 
     ScopedOperation {
         target,
+        current: None,
         operation: Box::new(operation),
     }
 }

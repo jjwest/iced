@@ -1,28 +1,28 @@
 #![allow(missing_docs)]
 use iced_debug as debug;
 use iced_program as program;
+use iced_program::runtime;
+use iced_program::runtime::futures;
 use iced_widget as widget;
 use iced_widget::core;
-use iced_widget::runtime;
-use iced_widget::runtime::futures;
 
 mod comet;
-mod executor;
 mod time_machine;
 
 use crate::core::border;
 use crate::core::keyboard;
-use crate::core::theme::{self, Base, Theme};
+use crate::core::theme::{self, Theme};
 use crate::core::time::seconds;
 use crate::core::window;
-use crate::core::{Alignment::Center, Color, Element, Length::Fill};
+use crate::core::{Alignment::Center, Color, Element, Font, Length::Fill, Settings};
 use crate::futures::Subscription;
 use crate::program::Program;
-use crate::runtime::Task;
+use crate::program::message;
+use crate::runtime::task::{self, Task};
 use crate::time_machine::TimeMachine;
 use crate::widget::{
-    bottom_right, button, center, column, container, horizontal_space, opaque,
-    row, scrollable, stack, text, themer,
+    bottom_right, button, center, column, container, opaque, row, scrollable, space, stack, text,
+    themer,
 };
 
 use std::fmt;
@@ -42,6 +42,7 @@ pub struct Attach<P> {
 impl<P> Program for Attach<P>
 where
     P: Program + 'static,
+    P::Message: std::fmt::Debug + message::MaybeClone,
 {
     type State = DevTools<P>;
     type Message = Event<P>;
@@ -51,6 +52,14 @@ where
 
     fn name() -> &'static str {
         P::name()
+    }
+
+    fn settings(&self) -> Settings {
+        self.program.settings()
+    }
+
+    fn window(&self) -> Option<window::Settings> {
+        self.program.window()
     }
 
     fn boot(&self) -> (Self::State, Task<Self::Message>) {
@@ -63,11 +72,7 @@ where
         )
     }
 
-    fn update(
-        &self,
-        state: &mut Self::State,
-        message: Self::Message,
-    ) -> Task<Self::Message> {
+    fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
         state.update(&self.program, message)
     }
 
@@ -83,14 +88,11 @@ where
         state.title(&self.program, window)
     }
 
-    fn subscription(
-        &self,
-        state: &Self::State,
-    ) -> runtime::futures::Subscription<Self::Message> {
+    fn subscription(&self, state: &Self::State) -> Subscription<Self::Message> {
         state.subscription(&self.program)
     }
 
-    fn theme(&self, state: &Self::State, window: window::Id) -> Self::Theme {
+    fn theme(&self, state: &Self::State, window: window::Id) -> Option<Self::Theme> {
         state.theme(&self.program, window)
     }
 
@@ -104,15 +106,14 @@ where
 }
 
 /// The state of the devtools.
-#[allow(missing_debug_implementations)]
 pub struct DevTools<P>
 where
     P: Program,
 {
     state: P::State,
-    mode: Mode,
     show_notification: bool,
     time_machine: TimeMachine<P>,
+    mode: Mode,
 }
 
 #[derive(Debug, Clone)]
@@ -126,7 +127,7 @@ pub enum Message {
 }
 
 enum Mode {
-    None,
+    Hidden,
     Setup(Setup),
 }
 
@@ -143,28 +144,29 @@ enum Goal {
 impl<P> DevTools<P>
 where
     P: Program + 'static,
+    P::Message: std::fmt::Debug + message::MaybeClone,
 {
-    fn new(state: P::State) -> (Self, Task<Message>) {
+    pub fn new(state: P::State) -> (Self, Task<Message>) {
         (
             Self {
                 state,
-                mode: Mode::None,
+                mode: Mode::Hidden,
                 show_notification: true,
                 time_machine: TimeMachine::new(),
             },
-            executor::spawn_blocking(|mut sender| {
+            Task::batch([task::blocking(|mut sender| {
                 thread::sleep(seconds(2));
                 let _ = sender.try_send(());
             })
-            .map(|_| Message::HideNotification),
+            .map(|_| Message::HideNotification)]),
         )
     }
 
-    fn title(&self, program: &P, window: window::Id) -> String {
+    pub fn title(&self, program: &P, window: window::Id) -> String {
         program.title(&self.state, window)
     }
 
-    fn update(&mut self, program: &P, event: Event<P>) -> Task<Event<P>> {
+    pub fn update(&mut self, program: &P, event: Event<P>) -> Task<Event<P>> {
         match event {
             Event::Message(message) => match message {
                 Message::HideNotification => {
@@ -175,7 +177,7 @@ where
                 Message::ToggleComet => {
                     if let Mode::Setup(setup) = &self.mode {
                         if matches!(setup, Setup::Idle { .. }) {
-                            self.mode = Mode::None;
+                            self.mode = Mode::Hidden;
                         }
 
                         Task::none()
@@ -208,17 +210,14 @@ where
                     Task::none()
                 }
                 Message::InstallComet => {
-                    self.mode =
-                        Mode::Setup(Setup::Running { logs: Vec::new() });
+                    self.mode = Mode::Setup(Setup::Running { logs: Vec::new() });
 
                     comet::install()
                         .map(Message::Installing)
                         .map(Event::Message)
                 }
-
                 Message::Installing(Ok(installation)) => {
-                    let Mode::Setup(Setup::Running { logs }) = &mut self.mode
-                    else {
+                    let Mode::Setup(Setup::Running { logs }) = &mut self.mode else {
                         return Task::none();
                     };
 
@@ -228,14 +227,13 @@ where
                             Task::none()
                         }
                         comet::install::Event::Finished => {
-                            self.mode = Mode::None;
+                            self.mode = Mode::Hidden;
                             comet::launch().discard()
                         }
                     }
                 }
                 Message::Installing(Err(error)) => {
-                    let Mode::Setup(Setup::Running { logs }) = &mut self.mode
-                    else {
+                    let Mode::Setup(Setup::Running { logs }) = &mut self.mode else {
                         return Task::none();
                     };
 
@@ -251,7 +249,7 @@ where
                     Task::none()
                 }
                 Message::CancelSetup => {
-                    self.mode = Mode::None;
+                    self.mode = Mode::Hidden;
 
                     Task::none()
                 }
@@ -290,7 +288,7 @@ where
         }
     }
 
-    fn view(
+    pub fn view(
         &self,
         program: &P,
         window: window::Id,
@@ -307,79 +305,66 @@ where
             }
         };
 
-        let theme = program.theme(state, window);
-
-        let derive_theme = move || {
-            theme
-                .palette()
+        let theme = || {
+            program
+                .theme(state, window)
+                .as_ref()
+                .and_then(theme::Base::palette)
                 .map(|palette| Theme::custom("iced devtools", palette))
-                .unwrap_or_default()
         };
 
-        let mode = match &self.mode {
-            Mode::None => None,
-            Mode::Setup(setup) => {
-                let stage: Element<'_, _, Theme, P::Renderer> = match setup {
-                    Setup::Idle { goal } => self::setup(goal),
-                    Setup::Running { logs } => installation(logs),
-                };
+        let setup = if let Mode::Setup(setup) = &self.mode {
+            let stage: Element<'_, _, Theme, P::Renderer> = match setup {
+                Setup::Idle { goal } => self::setup(goal),
+                Setup::Running { logs } => installation(logs),
+            };
 
-                let setup = center(
-                    container(stage)
-                        .padding(20)
-                        .max_width(500)
-                        .style(container::bordered_box),
-                )
-                .padding(10)
-                .style(|_theme| {
-                    container::Style::default()
-                        .background(Color::BLACK.scale_alpha(0.8))
-                });
+            let setup = center(
+                container(stage)
+                    .padding(20)
+                    .max_width(500)
+                    .style(container::bordered_box),
+            )
+            .padding(10)
+            .style(|_theme| container::Style::default().background(Color::BLACK.scale_alpha(0.8)));
 
-                Some(setup)
-            }
-        }
-        .map(|mode| {
-            themer(derive_theme(), Element::from(mode).map(Event::Message))
-        });
+            Some(themer(theme(), opaque(setup).map(Event::Message)))
+        } else {
+            None
+        };
 
         let notification = self
             .show_notification
             .then(|| text("Press F12 to open debug metrics"))
             .or_else(|| {
-                debug::is_stale().then(|| {
-                    text(
-                        "Types have changed. Restart to re-enable hotpatching.",
-                    )
-                })
-            });
-
-        stack![view]
-            .height(Fill)
-            .push_maybe(mode.map(opaque))
-            .push_maybe(notification.map(|notification| {
+                debug::is_stale()
+                    .then(|| text("Types have changed. Restart to re-enable hotpatching."))
+            })
+            .map(|notification| {
                 themer(
-                    derive_theme(),
+                    theme(),
                     bottom_right(opaque(
-                        container(notification)
-                            .padding(10)
-                            .style(container::dark),
+                        container(notification).padding(10).style(container::dark),
                     )),
                 )
-            }))
+            });
+
+        stack![view, setup, notification]
+            .width(Fill)
+            .height(Fill)
             .into()
     }
 
-    fn subscription(&self, program: &P) -> Subscription<Event<P>> {
-        let subscription =
-            program.subscription(&self.state).map(Event::Program);
+    pub fn subscription(&self, program: &P) -> Subscription<Event<P>> {
+        let subscription = program.subscription(&self.state).map(Event::Program);
         debug::subscriptions_tracked(subscription.units());
 
-        let hotkeys =
-            futures::keyboard::on_key_press(|key, _modifiers| match key {
-                keyboard::Key::Named(keyboard::key::Named::F12) => {
-                    Some(Message::ToggleComet)
-                }
+        let hotkeys = futures::keyboard::listen()
+            .filter_map(|event| match event {
+                keyboard::Event::KeyPressed {
+                    modified_key: keyboard::Key::Named(keyboard::key::Named::F12),
+                    ..
+                } => Some(Message::ToggleComet),
                 _ => None,
             })
             .map(Event::Message);
@@ -389,19 +374,19 @@ where
         Subscription::batch([subscription, hotkeys, commands])
     }
 
-    fn theme(&self, program: &P, window: window::Id) -> P::Theme {
+    pub fn theme(&self, program: &P, window: window::Id) -> Option<P::Theme> {
         program.theme(self.state(), window)
     }
 
-    fn style(&self, program: &P, theme: &P::Theme) -> theme::Style {
+    pub fn style(&self, program: &P, theme: &P::Theme) -> theme::Style {
         program.style(self.state(), theme)
     }
 
-    fn scale_factor(&self, program: &P, window: window::Id) -> f32 {
+    pub fn scale_factor(&self, program: &P, window: window::Id) -> f32 {
         program.scale_factor(self.state(), window)
     }
 
-    fn state(&self) -> &P::State {
+    pub fn state(&self) -> &P::State {
         self.time_machine.state().unwrap_or(&self.state)
     }
 }
@@ -419,6 +404,7 @@ where
 impl<P> fmt::Debug for Event<P>
 where
     P: Program,
+    P::Message: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -430,31 +416,16 @@ where
     }
 }
 
-#[cfg(feature = "time-travel")]
-impl<P> Clone for Event<P>
-where
-    P: Program,
-{
-    fn clone(&self) -> Self {
-        match self {
-            Self::Message(message) => Self::Message(message.clone()),
-            Self::Program(message) => Self::Program(message.clone()),
-            Self::Command(command) => Self::Command(*command),
-            Self::Discard => Self::Discard,
-        }
-    }
-}
-
 fn setup<Renderer>(goal: &Goal) -> Element<'_, Message, Theme, Renderer>
 where
-    Renderer: core::text::Renderer + 'static,
+    Renderer: program::Renderer + 'static,
 {
     let controls = row![
         button(text("Cancel").center().width(Fill))
             .width(100)
             .on_press(Message::CancelSetup)
             .style(button::danger),
-        horizontal_space(),
+        space::horizontal(),
         button(
             text(match goal {
                 Goal::Installation => "Install",
@@ -476,7 +447,7 @@ where
             comet::COMPATIBLE_REVISION
         )
         .size(14)
-        .font(Renderer::MONOSPACE_FONT),
+        .font(Font::MONOSPACE),
     )
     .width(Fill)
     .padding(5)
@@ -493,7 +464,7 @@ where
                 your iced applications.",
             column![
                 "Do you wish to install it with the \
-                    following  command?",
+                    following command?",
                 command
             ]
             .spacing(10),
@@ -504,13 +475,13 @@ where
             let comparison = column![
                 row![
                     "Installed revision:",
-                    horizontal_space(),
+                    space::horizontal(),
                     inline_code(revision.as_deref().unwrap_or("Unknown"))
                 ]
                 .align_y(Center),
                 row![
                     "Compatible revision:",
-                    horizontal_space(),
+                    space::horizontal(),
                     inline_code(comet::COMPATIBLE_REVISION),
                 ]
                 .align_y(Center)
@@ -533,19 +504,18 @@ where
     })
 }
 
-fn installation<'a, Renderer>(
-    logs: &'a [String],
-) -> Element<'a, Message, Theme, Renderer>
+fn installation<'a, Renderer>(logs: &'a [String]) -> Element<'a, Message, Theme, Renderer>
 where
-    Renderer: core::text::Renderer + 'a,
+    Renderer: program::Renderer + 'a,
 {
     column![
         text("Installing comet...").size(20),
         container(
             scrollable(
-                column(logs.iter().map(|log| {
-                    text(log).size(12).font(Renderer::MONOSPACE_FONT).into()
-                }),)
+                column(
+                    logs.iter()
+                        .map(|log| { text(log).size(12).font(Font::MONOSPACE).into() })
+                )
                 .spacing(3),
             )
             .spacing(10)
@@ -564,9 +534,9 @@ fn inline_code<'a, Renderer>(
     code: impl text::IntoFragment<'a>,
 ) -> Element<'a, Message, Theme, Renderer>
 where
-    Renderer: core::text::Renderer + 'a,
+    Renderer: program::Renderer + 'a,
 {
-    container(text(code).font(Renderer::MONOSPACE_FONT).size(12))
+    container(text(code).size(12).font(Font::MONOSPACE))
         .style(|_theme| {
             container::Style::default()
                 .background(Color::BLACK)

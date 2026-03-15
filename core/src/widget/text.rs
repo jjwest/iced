@@ -27,11 +27,9 @@ use crate::renderer;
 use crate::text;
 use crate::text::paragraph::{self, Paragraph};
 use crate::widget::tree::{self, Tree};
-use crate::{
-    Color, Element, Layout, Length, Pixels, Rectangle, Size, Theme, Widget,
-};
+use crate::{Color, Element, Layout, Length, Pixels, Rectangle, Size, Theme, Widget};
 
-pub use text::{Alignment, LineHeight, Shaping, Wrapping};
+pub use text::{Alignment, Ellipsis, LineHeight, Shaping, Wrapping};
 
 /// A bunch of text.
 ///
@@ -55,7 +53,7 @@ pub use text::{Alignment, LineHeight, Shaping, Wrapping};
 ///         .into()
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
+#[must_use]
 pub struct Text<'a, Theme, Renderer>
 where
     Theme: Catalog,
@@ -100,6 +98,14 @@ where
         self
     }
 
+    /// Sets the [`Font`] of the [`Text`], if `Some`.
+    ///
+    /// [`Font`]: crate::text::Renderer::Font
+    pub fn font_maybe(mut self, font: Option<impl Into<Renderer::Font>>) -> Self {
+        self.format.font = font.map(Into::into);
+        self
+    }
+
     /// Sets the width of the [`Text`] boundaries.
     pub fn width(mut self, width: impl Into<Length>) -> Self {
         self.format.width = width.into();
@@ -125,10 +131,7 @@ where
     }
 
     /// Sets the [`alignment::Vertical`] of the [`Text`].
-    pub fn align_y(
-        mut self,
-        alignment: impl Into<alignment::Vertical>,
-    ) -> Self {
+    pub fn align_y(mut self, alignment: impl Into<alignment::Vertical>) -> Self {
         self.format.align_y = alignment.into();
         self
     }
@@ -145,8 +148,13 @@ where
         self
     }
 
+    /// Sets the [`Ellipsis`] strategy of the [`Text`].
+    pub fn ellipsis(mut self, ellipsis: Ellipsis) -> Self {
+        self.format.ellipsis = ellipsis;
+        self
+    }
+
     /// Sets the style of the [`Text`].
-    #[must_use]
     pub fn style(mut self, style: impl Fn(&Theme) -> Style + 'a) -> Self
     where
         Theme::Class<'a>: From<StyleFn<'a, Theme>>,
@@ -175,7 +183,6 @@ where
 
     /// Sets the style class of the [`Text`].
     #[cfg(feature = "advanced")]
-    #[must_use]
     pub fn class(mut self, class: impl Into<Theme::Class<'a>>) -> Self {
         self.class = class.into();
         self
@@ -185,8 +192,7 @@ where
 /// The internal state of a [`Text`] widget.
 pub type State<P> = paragraph::Plain<P>;
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Text<'_, Theme, Renderer>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Text<'_, Theme, Renderer>
 where
     Theme: Catalog,
     Renderer: text::Renderer,
@@ -246,7 +252,7 @@ where
 
     fn operate(
         &mut self,
-        _state: &mut Tree,
+        _tree: &mut Tree,
         layout: Layout<'_>,
         _renderer: &Renderer,
         operation: &mut dyn super::Operation,
@@ -271,6 +277,7 @@ pub struct Format<Font> {
     pub align_y: alignment::Vertical,
     pub shaping: Shaping,
     pub wrapping: Wrapping,
+    pub ellipsis: Ellipsis,
 }
 
 impl<Font> Default for Format<Font> {
@@ -285,6 +292,7 @@ impl<Font> Default for Format<Font> {
             align_y: alignment::Vertical::Top,
             shaping: Shaping::default(),
             wrapping: Wrapping::default(),
+            ellipsis: Ellipsis::default(),
         }
     }
 }
@@ -316,6 +324,8 @@ where
             align_y: format.align_y,
             shaping: format.shaping,
             wrapping: format.wrapping,
+            ellipsis: format.ellipsis,
+            hint_factor: renderer.scale_factor(),
         });
 
         paragraph.min_bounds()
@@ -353,9 +363,7 @@ where
     Theme: Catalog + 'a,
     Renderer: text::Renderer + 'a,
 {
-    fn from(
-        text: Text<'a, Theme, Renderer>,
-    ) -> Element<'a, Message, Theme, Renderer> {
+    fn from(text: Text<'a, Theme, Renderer>) -> Element<'a, Message, Theme, Renderer> {
         Element::new(text)
     }
 }
@@ -370,8 +378,7 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<&'a str>
-    for Element<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> From<&'a str> for Element<'a, Message, Theme, Renderer>
 where
     Theme: Catalog + 'a,
     Renderer: text::Renderer + 'a,

@@ -1,13 +1,11 @@
-use crate::executor;
-use crate::runtime::Task;
+use crate::runtime::task::{self, Task};
 
 use std::process;
 
-pub const COMPATIBLE_REVISION: &str =
-    "20f9c9a897fecac5dce0977bbb5639fdce1f54b9";
+pub const COMPATIBLE_REVISION: &str = "fbef808eed51562f0ea601d8fc7c715bea9cfd0b";
 
 pub fn launch() -> Task<launch::Result> {
-    executor::try_spawn_blocking(|mut sender| {
+    task::try_blocking(|mut sender| {
         let cargo_install = process::Command::new("cargo")
             .args(["install", "--list"])
             .output()?;
@@ -48,7 +46,7 @@ pub fn launch() -> Task<launch::Result> {
 }
 
 pub fn install() -> Task<install::Result> {
-    executor::try_spawn_blocking(|mut sender| {
+    task::try_blocking(|mut sender| {
         use std::io::{BufRead, BufReader};
         use std::process::{Command, Stdio};
 
@@ -66,9 +64,7 @@ pub fn install() -> Task<install::Result> {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let mut stderr = BufReader::new(
-            install.stderr.take().expect("stderr must be piped"),
-        );
+        let mut stderr = BufReader::new(install.stderr.take().expect("stderr must be piped"));
 
         let mut log = String::new();
 
@@ -83,7 +79,8 @@ pub fn install() -> Task<install::Result> {
                 }
             }
 
-            let _ = sender.try_send(install::Event::Logged(log.clone()));
+            let _ = sender.try_send(install::Event::Logged(log.trim_end().to_owned()));
+
             log.clear();
         }
 

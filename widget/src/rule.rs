@@ -5,7 +5,7 @@
 //! # mod iced { pub mod widget { pub use iced_widget::*; } }
 //! # pub type State = ();
 //! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
-//! use iced::widget::horizontal_rule;
+//! use iced::widget::rule;
 //!
 //! #[derive(Clone)]
 //! enum Message {
@@ -13,7 +13,7 @@
 //! }
 //!
 //! fn view(state: &State) -> Element<'_, Message> {
-//!     horizontal_rule(2).into()
+//!     rule::horizontal(2).into()
 //! }
 //! ```
 use crate::core;
@@ -22,9 +22,31 @@ use crate::core::layout;
 use crate::core::mouse;
 use crate::core::renderer;
 use crate::core::widget::Tree;
-use crate::core::{
-    Color, Element, Layout, Length, Pixels, Rectangle, Size, Theme, Widget,
-};
+use crate::core::{Color, Element, Layout, Length, Pixels, Rectangle, Size, Theme, Widget};
+
+/// Creates a new horizontal [`Rule`] with the given height.
+pub fn horizontal<'a, Theme>(height: impl Into<Pixels>) -> Rule<'a, Theme>
+where
+    Theme: Catalog,
+{
+    Rule {
+        thickness: Length::Fixed(height.into().0),
+        is_vertical: false,
+        class: Theme::default(),
+    }
+}
+
+/// Creates a new vertical [`Rule`] with the given width.
+pub fn vertical<'a, Theme>(width: impl Into<Pixels>) -> Rule<'a, Theme>
+where
+    Theme: Catalog,
+{
+    Rule {
+        thickness: Length::Fixed(width.into().0),
+        is_vertical: true,
+        class: Theme::default(),
+    }
+}
 
 /// Display a horizontal or vertical rule for dividing content.
 ///
@@ -33,7 +55,7 @@ use crate::core::{
 /// # mod iced { pub mod widget { pub use iced_widget::*; } }
 /// # pub type State = ();
 /// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
-/// use iced::widget::horizontal_rule;
+/// use iced::widget::rule;
 ///
 /// #[derive(Clone)]
 /// enum Message {
@@ -41,17 +63,15 @@ use crate::core::{
 /// }
 ///
 /// fn view(state: &State) -> Element<'_, Message> {
-///     horizontal_rule(2).into()
+///     rule::horizontal(2).into()
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct Rule<'a, Theme = crate::Theme>
 where
     Theme: Catalog,
 {
-    width: Length,
-    height: Length,
-    is_horizontal: bool,
+    thickness: Length,
+    is_vertical: bool,
     class: Theme::Class<'a>,
 }
 
@@ -59,26 +79,6 @@ impl<'a, Theme> Rule<'a, Theme>
 where
     Theme: Catalog,
 {
-    /// Creates a horizontal [`Rule`] with the given height.
-    pub fn horizontal(height: impl Into<Pixels>) -> Self {
-        Rule {
-            width: Length::Fill,
-            height: Length::Fixed(height.into().0),
-            is_horizontal: true,
-            class: Theme::default(),
-        }
-    }
-
-    /// Creates a vertical [`Rule`] with the given width.
-    pub fn vertical(width: impl Into<Pixels>) -> Self {
-        Rule {
-            width: Length::Fixed(width.into().0),
-            height: Length::Fill,
-            is_horizontal: false,
-            class: Theme::default(),
-        }
-    }
-
     /// Sets the style of the [`Rule`].
     #[must_use]
     pub fn style(mut self, style: impl Fn(&Theme) -> Style + 'a) -> Self
@@ -98,16 +98,22 @@ where
     }
 }
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Rule<'_, Theme>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Rule<'_, Theme>
 where
     Renderer: core::Renderer,
     Theme: Catalog,
 {
     fn size(&self) -> Size<Length> {
-        Size {
-            width: self.width,
-            height: self.height,
+        if self.is_vertical {
+            Size {
+                width: self.thickness,
+                height: Length::Fill,
+            }
+        } else {
+            Size {
+                width: Length::Fill,
+                height: self.thickness,
+            }
         }
     }
 
@@ -117,12 +123,14 @@ where
         _renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        layout::atomic(limits, self.width, self.height)
+        let size = <Self as Widget<(), Theme, Renderer>>::size(self);
+
+        layout::atomic(limits, size.width, size.height)
     }
 
     fn draw(
         &self,
-        _state: &Tree,
+        _tree: &Tree,
         renderer: &mut Renderer,
         theme: &Theme,
         _style: &renderer::Style,
@@ -133,20 +141,8 @@ where
         let bounds = layout.bounds();
         let style = theme.style(&self.class);
 
-        let bounds = if self.is_horizontal {
-            let line_y = bounds.y.round();
-
-            let (offset, line_width) = style.fill_mode.fill(bounds.width);
-            let line_x = bounds.x + offset;
-
-            Rectangle {
-                x: line_x,
-                y: line_y,
-                width: line_width,
-                height: bounds.height,
-            }
-        } else {
-            let line_x = bounds.x.round();
+        let mut bounds = if self.is_vertical {
+            let line_x = bounds.x;
 
             let (offset, line_height) = style.fill_mode.fill(bounds.height);
             let line_y = bounds.y + offset;
@@ -157,7 +153,26 @@ where
                 width: bounds.width,
                 height: line_height,
             }
+        } else {
+            let line_y = bounds.y;
+
+            let (offset, line_width) = style.fill_mode.fill(bounds.width);
+            let line_x = bounds.x + offset;
+
+            Rectangle {
+                x: line_x,
+                y: line_y,
+                width: line_width,
+                height: bounds.height,
+            }
         };
+
+        if style.snap {
+            let unit = 1.0 / renderer.scale_factor().unwrap_or(1.0);
+
+            bounds.width = bounds.width.max(unit);
+            bounds.height = bounds.height.max(unit);
+        }
 
         renderer.fill_quad(
             renderer::Quad {
@@ -171,8 +186,7 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> From<Rule<'a, Theme>>
-    for Element<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> From<Rule<'a, Theme>> for Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
     Theme: 'a + Catalog,

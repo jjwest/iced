@@ -326,8 +326,8 @@
 //!
 //! Tasks can also be used to interact with the iced runtime. Some modules
 //! expose functions that create tasks for different purposes—like [changing
-//! window settings](window#functions), [focusing a widget](widget::focus_next), or
-//! [querying its visible bounds](widget::container::visible_bounds).
+//! window settings](window#functions), [focusing a widget](widget::operation::focus_next), or
+//! [querying its visible bounds](widget::selector::find).
 //!
 //! Like futures and streams, tasks expose [a monadic interface](Task::then)—but they can also be
 //! [mapped](Task::map), [chained](Task::chain), [batched](Task::batch), [canceled](Task::abortable),
@@ -368,8 +368,8 @@
 //! visible widgets of your user interface, at every moment.
 //!
 //! As with tasks, some modules expose convenient functions that build a [`Subscription`] for you—like
-//! [`time::every`] which can be used to listen to time, or [`keyboard::on_key_press`] which will notify you
-//! of any key presses. But you can also create your own with [`Subscription::run`] and [`run_with`].
+//! [`time::every`] which can be used to listen to time, or [`keyboard::listen`] which will notify you
+//! of any keyboard events. But you can also create your own with [`Subscription::run`] and [`run_with`].
 //!
 //! [`run_with`]: Subscription::run_with
 //!
@@ -473,7 +473,6 @@
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/iced-rs/iced/bdf0430880f5c29443f5f0a0ae4895866dfef4c6/docs/logo.svg"
 )]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 use iced_widget::graphics;
 use iced_widget::renderer;
@@ -495,6 +494,18 @@ compile_error!(
     "No futures executor has been enabled! You must enable an \
     executor feature.\n\
     Available options: thread-pool, tokio, or smol."
+);
+
+#[cfg(all(
+    target_family = "unix",
+    not(target_os = "macos"),
+    not(feature = "wayland"),
+    not(feature = "x11"),
+))]
+compile_error!(
+    "No Unix display server backend has been enabled. You must enable a \
+    display server feature.\n\
+    Available options: x11, wayland."
 );
 
 #[cfg(feature = "highlighter")]
@@ -521,21 +532,23 @@ pub use crate::core::gradient;
 pub use crate::core::padding;
 pub use crate::core::theme;
 pub use crate::core::{
-    Alignment, Animation, Background, Border, Color, ContentFit, Degrees,
-    Function, Gradient, Length, Padding, Pixels, Point, Radians, Rectangle,
-    Rotation, Settings, Shadow, Size, Theme, Transformation, Vector, never,
+    never, Alignment, Animation, Background, Border, Color, ContentFit, Degrees, Function,
+    Gradient, Length, Never, Padding, Pixels, Point, Radians, Rectangle, Rotation, Settings,
+    Shadow, Size, Theme, Transformation, Vector,
 };
+pub use crate::program::message;
+pub use crate::program::Preset;
 pub use crate::runtime::exit;
 pub use iced_futures::Subscription;
 
-pub use Alignment::Center;
-pub use Length::{Fill, FillPortion, Shrink};
 pub use alignment::Horizontal::{Left, Right};
 pub use alignment::Vertical::{Bottom, Top};
+pub use Alignment::Center;
+pub use Length::{Fill, FillPortion, Shrink};
 
 pub mod debug {
     //! Debug your applications.
-    pub use iced_debug::{Span, time, time_with};
+    pub use iced_debug::{time, time_with, Span};
 }
 
 pub mod task {
@@ -543,20 +556,25 @@ pub mod task {
     pub use crate::runtime::task::{Handle, Task};
 
     #[cfg(feature = "sipper")]
-    pub use crate::runtime::task::{Never, Sipper, Straw, sipper, stream};
+    pub use crate::runtime::task::{sipper, stream, Never, Sipper, Straw};
 }
 
 pub mod clipboard {
     //! Access the clipboard.
-    pub use crate::runtime::clipboard::{
-        read, read_primary, write, write_primary,
-    };
+    pub use crate::core::clipboard::{Content, Error, Kind};
+    pub use crate::runtime::clipboard::{read, read_files, read_html, read_text, write};
+
+    #[cfg(feature = "image")]
+    pub use crate::core::clipboard::Image;
+
+    #[cfg(feature = "image")]
+    pub use crate::runtime::clipboard::read_image;
 }
 
 pub mod executor {
     //! Choose your preferred executor to power your application.
-    pub use iced_futures::Executor;
     pub use iced_futures::backend::default::Executor as Default;
+    pub use iced_futures::Executor;
 }
 
 pub mod font {
@@ -568,32 +586,28 @@ pub mod font {
 pub mod event {
     //! Handle events of a user interface.
     pub use crate::core::event::{Event, Status};
-    pub use iced_futures::event::{
-        listen, listen_raw, listen_url, listen_with,
-    };
+    pub use iced_futures::event::{listen, listen_raw, listen_url, listen_with};
 }
 
 pub mod keyboard {
     //! Listen and react to keyboard events.
     pub use crate::core::keyboard::key;
     pub use crate::core::keyboard::{Event, Key, Location, Modifiers};
-    pub use iced_futures::keyboard::{on_key_press, on_key_release};
+    pub use iced_futures::keyboard::listen;
 }
 
 pub mod mouse {
     //! Listen and react to mouse events.
-    pub use crate::core::mouse::{
-        Button, Cursor, Event, Interaction, ScrollDelta,
-    };
-
+    pub use crate::core::mouse::{Button, Cursor, Event, Interaction, ScrollDelta};
     pub use crate::runtime::mouse::get_position;
 }
 
-#[cfg(feature = "system")]
 pub mod system {
     //! Retrieve system information.
-    pub use crate::runtime::system::Information;
-    pub use crate::shell::system::*;
+    pub use crate::runtime::system::{theme, theme_changes};
+
+    #[cfg(feature = "sysinfo")]
+    pub use crate::runtime::system::{information, Information};
 }
 
 pub mod overlay {
@@ -604,12 +618,8 @@ pub mod overlay {
     /// This is an alias of an [`overlay::Element`] with a default `Renderer`.
     ///
     /// [`overlay::Element`]: crate::core::overlay::Element
-    pub type Element<
-        'a,
-        Message,
-        Theme = crate::Renderer,
-        Renderer = crate::Renderer,
-    > = crate::core::overlay::Element<'a, Message, Theme, Renderer>;
+    pub type Element<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer> =
+        crate::core::overlay::Element<'a, Message, Theme, Renderer>;
 
     pub use iced_widget::overlay::*;
 }
@@ -622,15 +632,20 @@ pub mod touch {
 #[allow(hidden_glob_reexports)]
 pub mod widget {
     //! Use the built-in widgets or create your own.
+    pub use iced_runtime::widget::*;
     pub use iced_widget::*;
+
+    #[cfg(feature = "image")]
+    pub mod image {
+        //! Images display raster graphics in different formats (PNG, JPG, etc.).
+        pub use iced_runtime::image::{allocate, Allocation, Error};
+        pub use iced_widget::image::*;
+    }
 
     // We hide the re-exported modules by `iced_widget`
     mod core {}
     mod graphics {}
-    mod native {}
     mod renderer {}
-    mod style {}
-    mod runtime {}
 }
 
 pub use application::Application;
@@ -642,6 +657,7 @@ pub use font::Font;
 pub use program::Program;
 pub use renderer::Renderer;
 pub use task::Task;
+pub use window::Window;
 
 #[doc(inline)]
 pub use application::application;
@@ -651,12 +667,8 @@ pub use daemon::daemon;
 /// A generic widget.
 ///
 /// This is an alias of an `iced_native` element with a default `Renderer`.
-pub type Element<
-    'a,
-    Message,
-    Theme = crate::Theme,
-    Renderer = crate::Renderer,
-> = crate::core::Element<'a, Message, Theme, Renderer>;
+pub type Element<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer> =
+    crate::core::Element<'a, Message, Theme, Renderer>;
 
 /// The result of running an iced program.
 pub type Result = std::result::Result<(), Error>;
@@ -693,14 +705,13 @@ pub type Result = std::result::Result<(), Error>;
 /// }
 /// ```
 pub fn run<State, Message, Theme, Renderer>(
-    update: impl application::Update<State, Message> + 'static,
-    view: impl for<'a> application::View<'a, State, Message, Theme, Renderer>
-    + 'static,
+    update: impl application::UpdateFn<State, Message> + 'static,
+    view: impl for<'a> application::ViewFn<'a, State, Message, Theme, Renderer> + 'static,
 ) -> Result
 where
     State: Default + 'static,
-    Message: program::Message + 'static,
-    Theme: Default + theme::Base + 'static,
+    Message: Send + message::MaybeDebug + message::MaybeClone + 'static,
+    Theme: theme::Base + 'static,
     Renderer: program::Renderer + 'static,
 {
     application(State::default, update, view).run()

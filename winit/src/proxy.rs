@@ -4,7 +4,9 @@ use crate::futures::futures::{
     select,
     task::{Context, Poll},
 };
+use crate::graphics::shell;
 use crate::runtime::Action;
+use crate::runtime::window;
 use std::pin::Pin;
 
 /// An event loop proxy with backpressure that implements `Sink`.
@@ -77,10 +79,7 @@ impl<T: 'static> Proxy<T> {
     ///
     /// Note: This skips the backpressure mechanism with an unbounded
     /// channel. Use sparingly!
-    pub fn send(&self, value: T)
-    where
-        T: std::fmt::Debug,
-    {
+    pub fn send(&self, value: T) {
         self.send_action(Action::Output(value));
     }
 
@@ -88,10 +87,7 @@ impl<T: 'static> Proxy<T> {
     ///
     /// Note: This skips the backpressure mechanism with an unbounded
     /// channel. Use sparingly!
-    pub fn send_action(&self, action: Action<T>)
-    where
-        T: std::fmt::Debug,
-    {
+    pub fn send_action(&self, action: Action<T>) {
         let _ = self.raw.send_event(action);
     }
 
@@ -105,24 +101,15 @@ impl<T: 'static> Proxy<T> {
 impl<T: 'static> Sink<Action<T>> for Proxy<T> {
     type Error = mpsc::SendError;
 
-    fn poll_ready(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.sender.poll_ready(cx)
     }
 
-    fn start_send(
-        mut self: Pin<&mut Self>,
-        action: Action<T>,
-    ) -> Result<(), Self::Error> {
+    fn start_send(mut self: Pin<&mut Self>, action: Action<T>) -> Result<(), Self::Error> {
         self.sender.start_send(action)
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self.sender.poll_ready(cx) {
             Poll::Ready(Err(ref e)) if e.is_disconnected() => {
                 // If the receiver disconnected, we consider the sink to be flushed.
@@ -138,5 +125,22 @@ impl<T: 'static> Sink<Action<T>> for Proxy<T> {
     ) -> Poll<Result<(), Self::Error>> {
         self.sender.disconnect();
         Poll::Ready(Ok(()))
+    }
+}
+
+impl<T> shell::Notifier for Proxy<T>
+where
+    T: Send,
+{
+    fn tick(&self) {
+        self.send_action(Action::Tick);
+    }
+
+    fn request_redraw(&self) {
+        self.send_action(Action::Window(window::Action::RedrawAll));
+    }
+
+    fn invalidate_layout(&self) {
+        self.send_action(Action::Window(window::Action::RelayoutAll));
     }
 }

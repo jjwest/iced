@@ -14,7 +14,7 @@ use crate::layout::{self, Layout};
 use crate::mouse;
 use crate::overlay;
 use crate::renderer;
-use crate::{Clipboard, Event, Length, Rectangle, Shell, Size, Vector};
+use crate::{Event, Length, Rectangle, Shell, Size, Vector};
 
 /// A component that displays information and allows interaction.
 ///
@@ -25,19 +25,15 @@ use crate::{Clipboard, Event, Length, Rectangle, Shell, Size, Vector};
 /// The repository has some [examples] showcasing how to implement a custom
 /// widget:
 ///
-/// - [`bezier_tool`], a Paint-like tool for drawing Bézier curves using
-///   [`lyon`].
 /// - [`custom_widget`], a demonstration of how to build a custom widget that
 ///   draws a circle.
 /// - [`geometry`], a custom widget showcasing how to draw geometry with the
 ///   `Mesh2D` primitive in [`iced_wgpu`].
 ///
-/// [examples]: https://github.com/iced-rs/iced/tree/0.13/examples
-/// [`bezier_tool`]: https://github.com/iced-rs/iced/tree/0.13/examples/bezier_tool
-/// [`custom_widget`]: https://github.com/iced-rs/iced/tree/0.13/examples/custom_widget
-/// [`geometry`]: https://github.com/iced-rs/iced/tree/0.13/examples/geometry
-/// [`lyon`]: https://github.com/nical/lyon
-/// [`iced_wgpu`]: https://github.com/iced-rs/iced/tree/0.13/wgpu
+/// [examples]: https://github.com/iced-rs/iced/tree/master/examples
+/// [`custom_widget`]: https://github.com/iced-rs/iced/tree/master/examples/custom_widget
+/// [`geometry`]: https://github.com/iced-rs/iced/tree/master/examples/geometry
+/// [`iced_wgpu`]: https://github.com/iced-rs/iced/tree/master/wgpu
 pub trait Widget<Message, Theme, Renderer>
 where
     Renderer: crate::Renderer,
@@ -103,7 +99,7 @@ where
     /// Applies an [`Operation`] to the [`Widget`].
     fn operate(
         &mut self,
-        _state: &mut Tree,
+        _tree: &mut Tree,
         _layout: Layout<'_>,
         _renderer: &Renderer,
         _operation: &mut dyn Operation,
@@ -115,12 +111,11 @@ where
     /// By default, it does nothing.
     fn update(
         &mut self,
-        _state: &mut Tree,
+        _tree: &mut Tree,
         _event: &Event,
         _layout: Layout<'_>,
         _cursor: mouse::Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         _shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
@@ -128,10 +123,10 @@ where
 
     /// Returns the current [`mouse::Interaction`] of the [`Widget`].
     ///
-    /// By default, it returns [`mouse::Interaction::Idle`].
+    /// By default, it returns [`mouse::Interaction::None`].
     fn mouse_interaction(
         &self,
-        _state: &Tree,
+        _tree: &Tree,
         _layout: Layout<'_>,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
@@ -143,7 +138,7 @@ where
     /// Returns the overlay of the [`Widget`], if there is any.
     fn overlay<'a>(
         &'a mut self,
-        _state: &'a mut Tree,
+        _tree: &'a mut Tree,
         _layout: Layout<'a>,
         _renderer: &Renderer,
         _viewport: &Rectangle,

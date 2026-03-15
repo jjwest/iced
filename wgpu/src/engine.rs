@@ -1,4 +1,4 @@
-use crate::graphics::Antialiasing;
+use crate::graphics::{Antialiasing, Shell};
 use crate::primitive;
 use crate::quad;
 use crate::text;
@@ -7,7 +7,6 @@ use crate::triangle;
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
-#[allow(missing_debug_implementations)]
 pub struct Engine {
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
@@ -19,6 +18,7 @@ pub struct Engine {
     #[cfg(any(feature = "image", feature = "svg"))]
     pub(crate) image_pipeline: crate::image::Pipeline,
     pub(crate) primitive_storage: Arc<RwLock<primitive::Storage>>,
+    _shell: Shell,
 }
 
 impl Engine {
@@ -28,17 +28,14 @@ impl Engine {
         queue: wgpu::Queue,
         format: wgpu::TextureFormat,
         antialiasing: Option<Antialiasing>, // TODO: Initialize AA pipelines lazily
+        shell: Shell,
     ) -> Self {
         Self {
             format,
 
             quad_pipeline: quad::Pipeline::new(&device, format),
             text_pipeline: text::Pipeline::new(&device, &queue, format),
-            triangle_pipeline: triangle::Pipeline::new(
-                &device,
-                format,
-                antialiasing,
-            ),
+            triangle_pipeline: triangle::Pipeline::new(&device, format, antialiasing),
 
             #[cfg(any(feature = "image", feature = "svg"))]
             image_pipeline: {
@@ -47,20 +44,26 @@ impl Engine {
                 crate::image::Pipeline::new(&device, format, backend)
             },
 
-            primitive_storage: Arc::new(RwLock::new(
-                primitive::Storage::default(),
-            )),
+            primitive_storage: Arc::new(RwLock::new(primitive::Storage::default())),
 
             device,
             queue,
+            _shell: shell,
         }
     }
 
     #[cfg(any(feature = "image", feature = "svg"))]
-    pub fn create_image_cache(
-        &self,
-        device: &wgpu::Device,
-    ) -> crate::image::Cache {
-        self.image_pipeline.create_cache(device)
+    pub fn create_image_cache(&self) -> crate::image::Cache {
+        self.image_pipeline
+            .create_cache(&self.device, &self.queue, &self._shell)
+    }
+
+    pub fn trim(&mut self) {
+        self.text_pipeline.trim();
+
+        self.primitive_storage
+            .write()
+            .expect("primitive storage should be writable")
+            .trim();
     }
 }

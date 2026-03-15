@@ -4,13 +4,9 @@ use crate::core::mouse;
 use crate::core::overlay;
 use crate::core::renderer;
 use crate::core::widget::{Operation, Tree};
-use crate::core::{
-    Clipboard, Element, Event, Length, Pixels, Rectangle, Shell, Size, Vector,
-    Widget,
-};
+use crate::core::{Element, Event, Length, Pixels, Rectangle, Shell, Size, Vector, Widget};
 
 /// A container that distributes its contents on a responsive grid.
-#[allow(missing_debug_implementations)]
 pub struct Grid<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer> {
     spacing: f32,
     columns: Constraint,
@@ -48,9 +44,7 @@ where
     }
 
     /// Creates a [`Grid`] from an already allocated [`Vec`].
-    pub fn from_vec(
-        children: Vec<Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
+    pub fn from_vec(children: Vec<Element<'a, Message, Theme, Renderer>>) -> Self {
         Self {
             spacing: 0.0,
             columns: Constraint::Amount(3),
@@ -98,10 +92,7 @@ where
     }
 
     /// Adds an [`Element`] to the [`Grid`].
-    pub fn push(
-        mut self,
-        child: impl Into<Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
+    pub fn push(mut self, child: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
         self.children.push(child.into());
         self
     }
@@ -137,14 +128,9 @@ where
 }
 
 impl<'a, Message, Theme, Renderer: crate::core::Renderer>
-    FromIterator<Element<'a, Message, Theme, Renderer>>
-    for Grid<'a, Message, Theme, Renderer>
+    FromIterator<Element<'a, Message, Theme, Renderer>> for Grid<'a, Message, Theme, Renderer>
 {
-    fn from_iter<
-        T: IntoIterator<Item = Element<'a, Message, Theme, Renderer>>,
-    >(
-        iter: T,
-    ) -> Self {
+    fn from_iter<T: IntoIterator<Item = Element<'a, Message, Theme, Renderer>>>(iter: T) -> Self {
         Self::with_children(iter)
     }
 }
@@ -185,17 +171,24 @@ where
         let limits = limits.width(size.width).height(size.height);
         let available = limits.max();
 
+        if limits.compression().width && self.width.is_none() {
+            return layout::Node::new(Size::ZERO);
+        }
+
         let cells_per_row = match self.columns {
             // width = n * (cell + spacing) - spacing, given n > 0
-            Constraint::MaxWidth(pixels) => ((available.width + self.spacing)
-                / (pixels.0 + self.spacing))
-                .ceil() as usize,
+            Constraint::MaxWidth(pixels) => {
+                ((available.width + self.spacing) / (pixels.0 + self.spacing)).ceil() as usize
+            }
             Constraint::Amount(amount) => amount,
         };
 
-        let cell_width = (available.width
-            - self.spacing * (cells_per_row - 1) as f32)
-            / cells_per_row as f32;
+        if self.children.is_empty() || cells_per_row == 0 {
+            return layout::Node::new(limits.resolve(size.width, size.height, Size::ZERO));
+        }
+
+        let cell_width =
+            (available.width - self.spacing * (cells_per_row - 1) as f32) / cells_per_row as f32;
 
         let cell_height = match self.height {
             Sizing::AspectRatio(ratio) => Some(cell_width / ratio),
@@ -203,8 +196,7 @@ where
             Sizing::EvenlyDistribute(_) => {
                 let total_rows = self.children.len().div_ceil(cells_per_row);
                 Some(
-                    (available.height - self.spacing * (total_rows - 1) as f32)
-                        / total_rows as f32,
+                    (available.height - self.spacing * (total_rows - 1) as f32) / total_rows as f32,
                 )
             }
         };
@@ -219,9 +211,7 @@ where
         let mut y = 0.0;
         let mut row_height = 0.0f32;
 
-        for (i, (child, tree)) in
-            self.children.iter_mut().zip(&mut tree.children).enumerate()
-        {
+        for (i, (child, tree)) in self.children.iter_mut().zip(&mut tree.children).enumerate() {
             let node = child
                 .as_widget_mut()
                 .layout(tree, renderer, &cell_limits)
@@ -257,7 +247,8 @@ where
         renderer: &Renderer,
         operation: &mut dyn Operation,
     ) {
-        operation.container(None, layout.bounds(), &mut |operation| {
+        operation.container(None, layout.bounds());
+        operation.traverse(&mut |operation| {
             self.children
                 .iter_mut()
                 .zip(&mut tree.children)
@@ -277,20 +268,18 @@ where
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        for ((child, state), layout) in self
+        for ((child, tree), layout) in self
             .children
             .iter_mut()
             .zip(&mut tree.children)
             .zip(layout.children())
         {
-            child.as_widget_mut().update(
-                state, event, layout, cursor, renderer, clipboard, shell,
-                viewport,
-            );
+            child
+                .as_widget_mut()
+                .update(tree, event, layout, cursor, renderer, shell, viewport);
         }
     }
 
@@ -306,10 +295,10 @@ where
             .iter()
             .zip(&tree.children)
             .zip(layout.children())
-            .map(|((child, state), layout)| {
-                child.as_widget().mouse_interaction(
-                    state, layout, cursor, viewport, renderer,
-                )
+            .map(|((child, tree), layout)| {
+                child
+                    .as_widget()
+                    .mouse_interaction(tree, layout, cursor, viewport, renderer)
             })
             .max()
             .unwrap_or_default()
@@ -326,16 +315,16 @@ where
         viewport: &Rectangle,
     ) {
         if let Some(viewport) = layout.bounds().intersection(viewport) {
-            for ((child, state), layout) in self
+            for ((child, tree), layout) in self
                 .children
                 .iter()
                 .zip(&tree.children)
                 .zip(layout.children())
                 .filter(|(_, layout)| layout.bounds().intersects(&viewport))
             {
-                child.as_widget().draw(
-                    state, renderer, theme, style, layout, cursor, &viewport,
-                );
+                child
+                    .as_widget()
+                    .draw(tree, renderer, theme, style, layout, cursor, &viewport);
             }
         }
     }
@@ -399,9 +388,6 @@ impl From<Length> for Sizing {
 }
 
 /// Creates a new [`Sizing`] strategy that maintains the given aspect ratio.
-pub fn aspect_ratio(
-    width: impl Into<Pixels>,
-    height: impl Into<Pixels>,
-) -> Sizing {
+pub fn aspect_ratio(width: impl Into<Pixels>, height: impl Into<Pixels>) -> Sizing {
     Sizing::AspectRatio(width.into().0 / height.into().0)
 }

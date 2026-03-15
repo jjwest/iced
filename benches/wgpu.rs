@@ -4,9 +4,7 @@ use criterion::{Bencher, Criterion, criterion_group, criterion_main};
 use iced::alignment;
 use iced::mouse;
 use iced::widget::{canvas, scrollable, stack, text};
-use iced::{
-    Color, Element, Font, Length, Pixels, Point, Rectangle, Size, Theme,
-};
+use iced::{Color, Element, Font, Length, Pixels, Point, Rectangle, Size, Theme};
 use iced_wgpu::Renderer;
 use iced_wgpu::wgpu;
 
@@ -23,24 +21,22 @@ pub fn wgpu_benchmark(c: &mut Criterion) {
         ..Default::default()
     });
 
-    let adapter = executor::block_on(instance.request_adapter(
-        &wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        },
-    ))
+    let adapter = executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
     .expect("request adapter");
 
-    let (device, queue) =
-        executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: None,
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            memory_hints: wgpu::MemoryHints::MemoryUsage,
-            trace: wgpu::Trace::Off,
-        }))
-        .expect("request device");
+    let (device, queue) = executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: None,
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        memory_hints: wgpu::MemoryHints::MemoryUsage,
+        trace: wgpu::Trace::Off,
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+    }))
+    .expect("request device");
 
     c.bench_function("wgpu — canvas (light)", |b| {
         benchmark(b, &adapter, &device, &queue, |_| scene(10));
@@ -62,6 +58,15 @@ pub fn wgpu_benchmark(c: &mut Criterion) {
     c.bench_function("wgpu - dynamic text (heavy)", |b| {
         benchmark(b, &adapter, &device, &queue, |i| dynamic_text(100_000, i));
     });
+
+    c.bench_function("wgpu - advanced shaping (light)", |b| {
+        benchmark(b, &adapter, &device, &queue, |i| advanced_shaping(1_000, i));
+    });
+    c.bench_function("wgpu - advanced shaping (heavy)", |b| {
+        benchmark(b, &adapter, &device, &queue, |i| {
+            advanced_shaping(100_000, i)
+        });
+    });
 }
 
 fn benchmark<'a>(
@@ -72,7 +77,7 @@ fn benchmark<'a>(
     view: impl Fn(usize) -> Element<'a, (), Theme, Renderer>,
 ) {
     use iced_wgpu::graphics;
-    use iced_wgpu::graphics::Antialiasing;
+    use iced_wgpu::graphics::{Antialiasing, Shell};
     use iced_wgpu::wgpu;
     use iced_winit::core;
     use iced_winit::runtime;
@@ -85,12 +90,12 @@ fn benchmark<'a>(
         queue.clone(),
         format,
         Some(Antialiasing::MSAAx4),
+        Shell::headless(),
     );
 
     let mut renderer = Renderer::new(engine, Font::DEFAULT, Pixels::from(16));
 
-    let viewport =
-        graphics::Viewport::with_physical_size(Size::new(3840, 2160), 2.0);
+    let viewport = graphics::Viewport::with_physical_size(Size::new(3840, 2160), 2.0);
 
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
@@ -107,8 +112,7 @@ fn benchmark<'a>(
         view_formats: &[],
     });
 
-    let texture_view =
-        texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     let mut i = 0;
     let mut cache = Some(runtime::user_interface::Cache::default());
@@ -132,14 +136,12 @@ fn benchmark<'a>(
 
         cache = Some(user_interface.into_cache());
 
-        let submission = renderer.present(
-            Some(Color::BLACK),
-            format,
-            &texture_view,
-            &viewport,
-        );
+        let submission = renderer.present(Some(Color::BLACK), format, &texture_view, &viewport);
 
-        let _ = device.poll(wgpu::PollType::WaitForSubmissionIndex(submission));
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index: Some(submission),
+            timeout: None,
+        });
 
         i += 1;
     });
@@ -181,6 +183,8 @@ fn scene<'a, Message: 'a>(n: usize) -> Element<'a, Message, Theme, Renderer> {
                         align_x: text::Alignment::Left,
                         align_y: alignment::Vertical::Top,
                         shaping: text::Shaping::Basic,
+                        wrapping: text::Wrapping::default(),
+                        ellipsis: text::Ellipsis::default(),
                         max_width: f32::INFINITY,
                     });
                 }
@@ -194,29 +198,41 @@ fn scene<'a, Message: 'a>(n: usize) -> Element<'a, Message, Theme, Renderer> {
         .into()
 }
 
-fn layered_text<'a, Message: 'a>(
-    n: usize,
-) -> Element<'a, Message, Theme, Renderer> {
-    stack((0..n).map(|i| text(format!("I am paragraph {i}!")).into()))
+fn layered_text<'a, Message: 'a>(n: usize) -> Element<'a, Message, Theme, Renderer> {
+    stack((0..n).map(|i| text!("I am paragraph {i}!").into()))
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
 }
 
-fn dynamic_text<'a, Message: 'a>(
-    n: usize,
-    i: usize,
-) -> Element<'a, Message, Theme, Renderer> {
+fn dynamic_text<'a, Message: 'a>(n: usize, i: usize) -> Element<'a, Message, Theme, Renderer> {
     const LOREM_IPSUM: &str = include_str!("ipsum.txt");
 
     scrollable(
-        text(format!(
+        text!(
             "{}... Iteration {i}",
             std::iter::repeat(LOREM_IPSUM.chars())
                 .flatten()
                 .take(n)
                 .collect::<String>(),
-        ))
+        )
+        .size(10),
+    )
+    .into()
+}
+
+fn advanced_shaping<'a, Message: 'a>(n: usize, i: usize) -> Element<'a, Message, Theme, Renderer> {
+    const LOREM_IPSUM: &str = include_str!("ipsum.txt");
+
+    scrollable(
+        text!(
+            "{}... Iteration {i} 😎",
+            std::iter::repeat(LOREM_IPSUM.chars())
+                .flatten()
+                .take(n)
+                .collect::<String>(),
+        )
+        .shaping(text::Shaping::Advanced)
         .size(10),
     )
     .into()

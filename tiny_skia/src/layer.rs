@@ -1,8 +1,6 @@
 use crate::Primitive;
 use crate::core::renderer::Quad;
-use crate::core::{
-    self, Background, Color, Point, Rectangle, Svg, Transformation,
-};
+use crate::core::{self, Background, Color, Point, Rectangle, Svg, Transformation};
 use crate::graphics::damage;
 use crate::graphics::layer;
 use crate::graphics::text::{Editor, Paragraph, Text};
@@ -83,16 +81,26 @@ impl Layer {
             bounds: Rectangle::new(position, text.bounds) * transformation,
             color,
             size: text.size * transformation.scale_factor(),
-            line_height: text.line_height.to_absolute(text.size)
-                * transformation.scale_factor(),
+            line_height: text.line_height.to_absolute(text.size) * transformation.scale_factor(),
             font: text.font,
             align_x: text.align_x,
             align_y: text.align_y,
             shaping: text.shaping,
+            wrapping: text.wrapping,
+            ellipsis: text.ellipsis,
             clip_bounds: clip_bounds * transformation,
         };
 
         self.text.push(Item::Live(text));
+    }
+
+    pub fn draw_text_raw(&mut self, raw: graphics::text::Raw, transformation: Transformation) {
+        let raw = Text::Raw {
+            raw,
+            transformation,
+        };
+
+        self.text.push(Item::Live(raw));
     }
 
     pub fn draw_text_group(
@@ -117,11 +125,19 @@ impl Layer {
 
     pub fn draw_image(&mut self, image: Image, transformation: Transformation) {
         match image {
-            Image::Raster(raster, bounds) => {
-                self.draw_raster(raster, bounds, transformation);
+            Image::Raster {
+                image,
+                bounds,
+                clip_bounds,
+            } => {
+                self.draw_raster(image, bounds, clip_bounds, transformation);
             }
-            Image::Vector(svg, bounds) => {
-                self.draw_svg(svg, bounds, transformation);
+            Image::Vector {
+                svg,
+                bounds,
+                clip_bounds,
+            } => {
+                self.draw_svg(svg, bounds, clip_bounds, transformation);
             }
         }
     }
@@ -130,9 +146,17 @@ impl Layer {
         &mut self,
         image: core::Image,
         bounds: Rectangle,
+        clip_bounds: Rectangle,
         transformation: Transformation,
     ) {
-        let image = Image::Raster(image, bounds * transformation);
+        let image = Image::Raster {
+            image: core::Image {
+                border_radius: image.border_radius * transformation.scale_factor(),
+                ..image
+            },
+            bounds: bounds * transformation,
+            clip_bounds: clip_bounds * transformation,
+        };
 
         self.images.push(image);
     }
@@ -141,9 +165,14 @@ impl Layer {
         &mut self,
         svg: Svg,
         bounds: Rectangle,
+        clip_bounds: Rectangle,
         transformation: Transformation,
     ) {
-        let svg = Image::Vector(svg, bounds * transformation);
+        let svg = Image::Vector {
+            svg,
+            bounds: bounds * transformation,
+            clip_bounds: clip_bounds * transformation,
+        };
 
         self.images.push(svg);
     }
@@ -156,7 +185,7 @@ impl Layer {
     ) {
         self.primitives.push(Item::Group(
             primitives,
-            clip_bounds,
+            clip_bounds * transformation,
             transformation,
         ));
     }
@@ -169,7 +198,7 @@ impl Layer {
     ) {
         self.primitives.push(Item::Cached(
             primitives,
-            clip_bounds,
+            clip_bounds * transformation,
             transformation,
         ));
     }
@@ -179,15 +208,24 @@ impl Layer {
             return vec![previous.bounds, current.bounds];
         }
 
+        let layer_bounds = current.bounds.expand(1.0);
+
         let mut damage = damage::list(
             &previous.quads,
             &current.quads,
             |(quad, _)| {
-                quad.bounds
-                    .expand(1.0)
-                    .intersection(&current.bounds)
-                    .into_iter()
-                    .collect()
+                let Some(bounds) = quad.bounds.expand(1.0).intersection(&layer_bounds) else {
+                    return vec![];
+                };
+
+                vec![if quad.shadow.color.a > 0.0 {
+                    bounds.expand(
+                        quad.shadow.offset.x.abs().max(quad.shadow.offset.y.abs())
+                            + quad.shadow.blur_radius,
+                    )
+                } else {
+                    bounds
+                }]
             },
             |(quad_a, background_a), (quad_b, background_b)| {
                 quad_a == quad_b && background_a == background_b
@@ -224,16 +262,14 @@ impl Layer {
             &current.primitives,
             |item| match item {
                 Item::Live(primitive) => vec![primitive.visible_bounds()],
-                Item::Group(primitives, group_bounds, transformation) => {
-                    primitives
-                        .as_slice()
-                        .iter()
-                        .map(Primitive::visible_bounds)
-                        .map(|bounds| bounds * *transformation)
-                        .filter_map(|bounds| bounds.intersection(group_bounds))
-                        .collect()
-                }
-                Item::Cached(_, bounds, _) => {
+                Item::Group(primitives, group_bounds, transformation) => primitives
+                    .as_slice()
+                    .iter()
+                    .map(Primitive::visible_bounds)
+                    .map(|bounds| bounds * *transformation)
+                    .filter_map(|bounds| bounds.intersection(group_bounds))
+                    .collect(),
+                Item::Cached(_primitives, bounds, _transformation) => {
                     vec![*bounds]
                 }
             },
@@ -362,16 +398,16 @@ impl<T> Item<T> {
     pub fn transformation(&self) -> Transformation {
         match self {
             Item::Live(_) => Transformation::IDENTITY,
-            Item::Group(_, _, transformation)
-            | Item::Cached(_, _, transformation) => *transformation,
+            Item::Group(_, _, transformation) | Item::Cached(_, _, transformation) => {
+                *transformation
+            }
         }
     }
 
     pub fn clip_bounds(&self) -> Rectangle {
         match self {
             Item::Live(_) => Rectangle::INFINITE,
-            Item::Group(_, clip_bounds, _)
-            | Item::Cached(_, clip_bounds, _) => *clip_bounds,
+            Item::Group(_, clip_bounds, _) | Item::Cached(_, clip_bounds, _) => *clip_bounds,
         }
     }
 

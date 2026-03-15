@@ -4,29 +4,30 @@
 //!
 //! `iced_runtime` takes [`iced_core`] and builds a native runtime on top of it.
 //!
-//! [`iced_core`]: https://github.com/iced-rs/iced/tree/0.13/core
+//! [`iced_core`]: https://github.com/iced-rs/iced/tree/master/core
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/iced-rs/iced/9ab6923e943f784985e9ef9ca28b10278297225d/docs/logo.svg"
 )]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod clipboard;
 pub mod font;
+pub mod image;
 pub mod keyboard;
 pub mod mouse;
-pub mod overlay;
 pub mod system;
 pub mod task;
 pub mod user_interface;
+pub mod widget;
 pub mod window;
 
 pub use iced_core as core;
-pub use iced_debug as debug;
 pub use iced_futures as futures;
 
 pub use task::Task;
 pub use user_interface::UserInterface;
+pub use window::Window;
 
-use crate::core::widget;
+use crate::core::Event;
 use crate::futures::futures::channel::oneshot;
 
 use std::borrow::Cow;
@@ -46,7 +47,7 @@ pub enum Action<T> {
     },
 
     /// Run a widget operation.
-    Widget(Box<dyn widget::Operation>),
+    Widget(Box<dyn core::widget::Operation>),
 
     /// Run a clipboard action.
     Clipboard(clipboard::Action),
@@ -60,6 +61,20 @@ pub enum Action<T> {
     /// Run a system action.
     System(system::Action),
 
+    /// Run an image action.
+    Image(image::Action),
+
+    /// Produce an event.
+    Event {
+        /// The [`window::Id`](core::window::Id) of the event.
+        window: core::window::Id,
+        /// The [`Event`] to be produced.
+        event: Event,
+    },
+
+    /// Poll any resources that may have pending computations.
+    Tick,
+
     /// Recreate all user interfaces and redraw all windows.
     Reload,
 
@@ -71,22 +86,23 @@ pub enum Action<T> {
 }
 
 impl<T> Action<T> {
-    /// Creates a new [`Action::Widget`] with the given [`widget::Operation`].
-    pub fn widget(operation: impl widget::Operation + 'static) -> Self {
+    /// Creates a new [`Action::Widget`] with the given [`widget::Operation`](core::widget::Operation).
+    pub fn widget(operation: impl core::widget::Operation + 'static) -> Self {
         Self::Widget(Box::new(operation))
     }
 
     fn output<O>(self) -> Result<T, Action<O>> {
         match self {
             Action::Output(output) => Ok(output),
-            Action::LoadFont { bytes, channel } => {
-                Err(Action::LoadFont { bytes, channel })
-            }
+            Action::LoadFont { bytes, channel } => Err(Action::LoadFont { bytes, channel }),
             Action::Widget(operation) => Err(Action::Widget(operation)),
             Action::Clipboard(action) => Err(Action::Clipboard(action)),
             Action::Window(action) => Err(Action::Window(action)),
             Action::Mouse(action) => Err(Action::Mouse(action)),
             Action::System(action) => Err(Action::System(action)),
+            Action::Image(action) => Err(Action::Image(action)),
+            Action::Event { window, event } => Err(Action::Event { window, event }),
+            Action::Tick => Err(Action::Tick),
             Action::Reload => Err(Action::Reload),
             Action::Exit => Err(Action::Exit),
         }
@@ -112,6 +128,12 @@ where
             Action::Window(_) => write!(f, "Action::Window"),
             Action::Mouse(_) => write!(f, "Action::Mouse"),
             Action::System(action) => write!(f, "Action::System({action:?})"),
+            Action::Image(_) => write!(f, "Action::Image"),
+            Action::Event { window, event } => write!(
+                f,
+                "Action::Event {{ window: {window:?}, event: {event:?} }}"
+            ),
+            Action::Tick => write!(f, "Action::Tick"),
             Action::Reload => write!(f, "Action::Reload"),
             Action::Exit => write!(f, "Action::Exit"),
         }

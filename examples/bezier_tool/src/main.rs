@@ -1,10 +1,10 @@
 //! This example showcases an interactive `Canvas` for drawing Bézier curves.
-use iced::widget::{button, container, horizontal_space, hover, right};
+use iced::widget::{button, container, hover, right, space};
 use iced::{Element, Theme};
 
 pub fn main() -> iced::Result {
     iced::application(Example::default, Example::update, Example::view)
-        .theme(|_| Theme::CatppuccinMocha)
+        .theme(Theme::CatppuccinMocha)
         .run()
 }
 
@@ -38,7 +38,7 @@ impl Example {
         container(hover(
             self.bezier.view(&self.curves).map(Message::AddCurve),
             if self.curves.is_empty() {
-                container(horizontal_space())
+                container(space::horizontal())
             } else {
                 right(
                     button("Clear")
@@ -55,9 +55,7 @@ impl Example {
 
 mod bezier {
     use iced::mouse;
-    use iced::widget::canvas::{
-        self, Canvas, Event, Frame, Geometry, Path, Stroke,
-    };
+    use iced::widget::canvas::{self, Canvas, Event, Frame, Geometry, Path, Stroke};
     use iced::{Element, Fill, Point, Rectangle, Renderer, Theme};
 
     #[derive(Default)]
@@ -99,9 +97,7 @@ mod bezier {
             let cursor_position = cursor.position_in(bounds)?;
 
             match event {
-                Event::Mouse(mouse::Event::ButtonPressed(
-                    mouse::Button::Left,
-                )) => Some(
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => Some(
                     match *state {
                         None => {
                             *state = Some(Pending::One {
@@ -130,9 +126,7 @@ mod bezier {
                     }
                     .and_capture(),
                 ),
-                Event::Mouse(mouse::Event::CursorMoved { .. })
-                    if state.is_some() =>
-                {
+                Event::Mouse(mouse::Event::CursorMoved { .. }) if state.is_some() => {
                     Some(canvas::Action::request_redraw())
                 }
                 _ => None,
@@ -147,17 +141,16 @@ mod bezier {
             bounds: Rectangle,
             cursor: mouse::Cursor,
         ) -> Vec<Geometry> {
-            let content =
-                self.state.cache.draw(renderer, bounds.size(), |frame| {
-                    Curve::draw_all(self.curves, frame, theme);
+            let content = self.state.cache.draw(renderer, bounds.size(), |frame| {
+                Curve::draw_all(self.curves, frame, theme);
 
-                    frame.stroke(
-                        &Path::rectangle(Point::ORIGIN, frame.size()),
-                        Stroke::default()
-                            .with_width(2.0)
-                            .with_color(theme.palette().text),
-                    );
-                });
+                frame.stroke(
+                    &Path::rectangle(Point::ORIGIN, frame.size()),
+                    Stroke::default()
+                        .with_width(2.0)
+                        .with_color(theme.palette().text),
+                );
+            });
 
             if let Some(pending) = state {
                 vec![content, pending.draw(renderer, theme, bounds, cursor)]

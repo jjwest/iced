@@ -1,11 +1,8 @@
 use iced::widget::{
-    button, center, center_x, column, container, horizontal_space, scrollable,
-    text, text_input,
+    button, center, center_x, column, container, operation, scrollable, space, text, text_input,
 };
 use iced::window;
-use iced::{
-    Center, Element, Fill, Function, Subscription, Task, Theme, Vector,
-};
+use iced::{Center, Element, Fill, Function, Subscription, Task, Theme, Vector};
 
 use std::collections::BTreeMap;
 
@@ -42,7 +39,7 @@ enum Message {
 
 impl Example {
     fn new() -> (Self, Task<Message>) {
-        let (_id, open) = window::open(window::Settings::default());
+        let (_, open) = window::open(window::Settings::default());
 
         (
             Self {
@@ -66,18 +63,14 @@ impl Example {
                     return Task::none();
                 };
 
-                window::get_position(*last_window)
+                window::position(*last_window)
                     .then(|last_position| {
-                        let position = last_position.map_or(
-                            window::Position::Default,
-                            |last_position| {
-                                window::Position::Specific(
-                                    last_position + Vector::new(20.0, 20.0),
-                                )
-                            },
-                        );
+                        let position =
+                            last_position.map_or(window::Position::Default, |last_position| {
+                                window::Position::Specific(last_position + Vector::new(20.0, 20.0))
+                            });
 
-                        let (_id, open) = window::open(window::Settings {
+                        let (_, open) = window::open(window::Settings {
                             position,
                             ..window::Settings::default()
                         });
@@ -88,7 +81,7 @@ impl Example {
             }
             Message::WindowOpened(id) => {
                 let window = Window::new(self.windows.len() + 1);
-                let focus_input = text_input::focus(format!("input-{id}"));
+                let focus_input = operation::focus(format!("input-{id}"));
 
                 self.windows.insert(id, window);
 
@@ -134,16 +127,12 @@ impl Example {
         if let Some(window) = self.windows.get(&window_id) {
             center(window.view(window_id)).into()
         } else {
-            horizontal_space().into()
+            space().into()
         }
     }
 
-    fn theme(&self, window: window::Id) -> Theme {
-        if let Some(window) = self.windows.get(&window) {
-            window.theme.clone()
-        } else {
-            Theme::default()
-        }
+    fn theme(&self, window: window::Id) -> Option<Theme> {
+        Some(self.windows.get(&window)?.theme.clone())
     }
 
     fn scale_factor(&self, window: window::Id) -> f32 {
@@ -173,10 +162,7 @@ impl Window {
             text("Window scale factor:"),
             text_input("Window Scale", &self.scale_input)
                 .on_input(Message::ScaleInputChanged.with(id))
-                .on_submit(Message::ScaleChanged(
-                    id,
-                    self.scale_input.to_string()
-                ))
+                .on_submit(Message::ScaleChanged(id, self.scale_input.to_string()))
         ];
 
         let title_input = column![
@@ -186,8 +172,7 @@ impl Window {
                 .id(format!("input-{id}"))
         ];
 
-        let new_window_button =
-            button(text("New Window")).on_press(Message::OpenWindow);
+        let new_window_button = button(text("New Window")).on_press(Message::OpenWindow);
 
         let content = column![scale_input, title_input, new_window_button]
             .spacing(50)

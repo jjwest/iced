@@ -8,9 +8,7 @@ pub use highlighter::Highlighter;
 pub use paragraph::Paragraph;
 
 use crate::alignment;
-use crate::{
-    Background, Border, Color, Padding, Pixels, Point, Rectangle, Size,
-};
+use crate::{Background, Border, Color, Padding, Pixels, Point, Rectangle, Size};
 
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
@@ -44,6 +42,19 @@ pub struct Text<Content = String, Font = crate::Font> {
 
     /// The [`Wrapping`] strategy of the [`Text`].
     pub wrapping: Wrapping,
+
+    /// The [`Ellipsis`] strategy of the [`Text`].
+    pub ellipsis: Ellipsis,
+
+    /// The scale factor that may be used to internally scale the layout
+    /// calculation of the [`Paragraph`] and leverage metrics hinting.
+    ///
+    /// Effectively, this defines the "base" layout that will be used for
+    /// linear scaling.
+    ///
+    /// If `None`, hinting will be disabled and subpixel positioning will be
+    /// performed.
+    pub hint_factor: Option<f32>,
 }
 
 impl<Content, Font> Text<Content, Font>
@@ -63,6 +74,8 @@ where
             align_y: self.align_y,
             shaping: self.shaping,
             wrapping: self.wrapping,
+            ellipsis: self.ellipsis,
+            hint_factor: self.hint_factor,
         }
     }
 }
@@ -192,6 +205,22 @@ pub enum Wrapping {
     WordOrGlyph,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+/// The ellipsis strategy of some text.
+pub enum Ellipsis {
+    /// No ellipsis.
+    ///
+    /// This is the default.
+    #[default]
+    None,
+    /// Ellipsize the start of the last visual line in the text.
+    Start,
+    /// Ellipsize the middle of the last visual line in the text.
+    Middle,
+    /// Ellipsize the end of the last visual line in the text.
+    End,
+}
+
 /// The height of a line of text in a paragraph.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LineHeight {
@@ -299,11 +328,6 @@ pub trait Renderer: crate::Renderer {
     /// The [`Editor`] of this [`Renderer`].
     type Editor: Editor<Font = Self::Font> + 'static;
 
-    /// A monospace font.
-    ///
-    /// It may be used by devtools.
-    const MONOSPACE_FONT: Self::Font;
-
     /// The icon font of the backend.
     const ICON_FONT: Self::Font;
 
@@ -316,6 +340,31 @@ pub trait Renderer: crate::Renderer {
     ///
     /// [`ICON_FONT`]: Self::ICON_FONT
     const ARROW_DOWN_ICON: char;
+
+    /// The `char` representing a ^ icon in the built-in [`ICON_FONT`].
+    ///
+    /// [`ICON_FONT`]: Self::ICON_FONT
+    const SCROLL_UP_ICON: char;
+
+    /// The `char` representing a v icon in the built-in [`ICON_FONT`].
+    ///
+    /// [`ICON_FONT`]: Self::ICON_FONT
+    const SCROLL_DOWN_ICON: char;
+
+    /// The `char` representing a < icon in the built-in [`ICON_FONT`].
+    ///
+    /// [`ICON_FONT`]: Self::ICON_FONT
+    const SCROLL_LEFT_ICON: char;
+
+    /// The `char` representing a > icon in the built-in [`ICON_FONT`].
+    ///
+    /// [`ICON_FONT`]: Self::ICON_FONT
+    const SCROLL_RIGHT_ICON: char;
+
+    /// The 'char' representing the iced logo in the built-in ['ICON_FONT'].
+    ///
+    /// ['ICON_FONT']: Self::ICON_FONT
+    const ICED_LOGO: char;
 
     /// Returns the default [`Self::Font`].
     fn default_font(&self) -> Self::Font;
@@ -453,10 +502,7 @@ impl<'a, Link, Font> Span<'a, Link, Font> {
     }
 
     /// Sets the [`Background`] of the [`Span`], if any.
-    pub fn background_maybe(
-        mut self,
-        background: Option<impl Into<Background>>,
-    ) -> Self {
+    pub fn background_maybe(mut self, background: Option<impl Into<Background>>) -> Self {
         let Some(background) = background else {
             return self;
         };

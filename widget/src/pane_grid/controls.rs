@@ -4,13 +4,8 @@ use crate::core::{self, Element};
 /// The controls of a [`Pane`].
 ///
 /// [`Pane`]: super::Pane
-#[allow(missing_debug_implementations)]
-pub struct Controls<
-    'a,
-    Message,
-    Theme = crate::Theme,
-    Renderer = crate::Renderer,
-> where
+pub struct Controls<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer>
+where
     Theme: container::Catalog,
     Renderer: core::Renderer,
 {
@@ -24,9 +19,7 @@ where
     Renderer: core::Renderer,
 {
     /// Creates a new [`Controls`] with the given content.
-    pub fn new(
-        content: impl Into<Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
+    pub fn new(content: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
         Self {
             full: content.into(),
             compact: None,

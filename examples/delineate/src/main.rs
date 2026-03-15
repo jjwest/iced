@@ -1,18 +1,13 @@
 use iced::event::{self, Event};
 use iced::mouse;
-use iced::widget::{
-    column, container, horizontal_space, row, scrollable, text, vertical_space,
-};
+use iced::widget::{self, column, container, row, scrollable, selector, space, text};
 use iced::window;
-use iced::{
-    Center, Color, Element, Fill, Font, Point, Rectangle, Subscription, Task,
-    Theme,
-};
+use iced::{Center, Color, Element, Fill, Font, Point, Rectangle, Subscription, Task, Theme};
 
 pub fn main() -> iced::Result {
     iced::application(Example::default, Example::update, Example::view)
         .subscription(Example::subscription)
-        .theme(|_| Theme::Dark)
+        .theme(Theme::Dark)
         .run()
 }
 
@@ -23,13 +18,13 @@ struct Example {
     inner_bounds: Option<Rectangle>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Message {
     MouseMoved(Point),
     WindowResized,
     Scrolled,
-    OuterBoundsFetched(Option<Rectangle>),
-    InnerBoundsFetched(Option<Rectangle>),
+    OuterFound(Option<selector::Target>),
+    InnerFound(Option<selector::Target>),
 }
 
 impl Example {
@@ -41,18 +36,16 @@ impl Example {
                 Task::none()
             }
             Message::Scrolled | Message::WindowResized => Task::batch(vec![
-                container::visible_bounds(OUTER_CONTAINER.clone())
-                    .map(Message::OuterBoundsFetched),
-                container::visible_bounds(INNER_CONTAINER.clone())
-                    .map(Message::InnerBoundsFetched),
+                selector::find(OUTER_CONTAINER).map(Message::OuterFound),
+                selector::find(INNER_CONTAINER).map(Message::InnerFound),
             ]),
-            Message::OuterBoundsFetched(outer_bounds) => {
-                self.outer_bounds = outer_bounds;
+            Message::OuterFound(outer) => {
+                self.outer_bounds = outer.as_ref().and_then(selector::Target::visible_bounds);
 
                 Task::none()
             }
-            Message::InnerBoundsFetched(inner_bounds) => {
-                self.inner_bounds = inner_bounds;
+            Message::InnerFound(inner) => {
+                self.inner_bounds = inner.as_ref().and_then(selector::Target::visible_bounds);
 
                 Task::none()
             }
@@ -63,7 +56,7 @@ impl Example {
         let data_row = |label, value, color| {
             row![
                 text(label),
-                horizontal_space(),
+                space::horizontal(),
                 text(value)
                     .font(Font::MONOSPACE)
                     .size(14)
@@ -82,9 +75,7 @@ impl Example {
                 },
                 if bounds
                     .zip(self.mouse_position)
-                    .map(|(bounds, mouse_position)| {
-                        bounds.contains(mouse_position)
-                    })
+                    .map(|(bounds, mouse_position)| bounds.contains(mouse_position))
                     .unwrap_or_default()
                 {
                     Some(Color {
@@ -111,21 +102,21 @@ impl Example {
             scrollable(
                 column![
                     text("Scroll me!"),
-                    vertical_space().height(400),
+                    space().height(400),
                     container(text("I am the outer container!"))
-                        .id(OUTER_CONTAINER.clone())
+                        .id(OUTER_CONTAINER)
                         .padding(40)
                         .style(container::rounded_box),
-                    vertical_space().height(400),
+                    space().height(400),
                     scrollable(
                         column![
                             text("Scroll me!"),
-                            vertical_space().height(400),
+                            space().height(400),
                             container(text("I am the inner container!"))
-                                .id(INNER_CONTAINER.clone())
+                                .id(INNER_CONTAINER)
                                 .padding(40)
                                 .style(container::rounded_box),
-                            vertical_space().height(400),
+                            space().height(400),
                         ]
                         .padding(20)
                     )
@@ -149,17 +140,11 @@ impl Example {
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 Some(Message::MouseMoved(position))
             }
-            Event::Window(window::Event::Resized { .. }) => {
-                Some(Message::WindowResized)
-            }
+            Event::Window(window::Event::Resized { .. }) => Some(Message::WindowResized),
             _ => None,
         })
     }
 }
 
-use std::sync::LazyLock;
-
-static OUTER_CONTAINER: LazyLock<container::Id> =
-    LazyLock::new(|| container::Id::new("outer"));
-static INNER_CONTAINER: LazyLock<container::Id> =
-    LazyLock::new(|| container::Id::new("inner"));
+const OUTER_CONTAINER: widget::Id = widget::Id::new("outer");
+const INNER_CONTAINER: widget::Id = widget::Id::new("inner");

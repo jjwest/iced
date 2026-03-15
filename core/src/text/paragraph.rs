@@ -1,7 +1,7 @@
 //! Draw paragraphs.
 use crate::alignment;
 use crate::text::{
-    Alignment, Difference, Hit, LineHeight, Shaping, Span, Text, Wrapping,
+    Alignment, Difference, Ellipsis, Hit, LineHeight, Shaping, Span, Text, Wrapping,
 };
 use crate::{Pixels, Point, Rectangle, Size};
 
@@ -14,9 +14,7 @@ pub trait Paragraph: Sized + Default {
     fn with_text(text: Text<&str, Self::Font>) -> Self;
 
     /// Creates a new [`Paragraph`] laid out with the given [`Text`].
-    fn with_spans<Link>(
-        text: Text<&[Span<'_, Link, Self::Font>], Self::Font>,
-    ) -> Self;
+    fn with_spans<Link>(text: Text<&[Span<'_, Link, Self::Font>], Self::Font>) -> Self;
 
     /// Lays out the [`Paragraph`] with some new boundaries.
     fn resize(&mut self, new_bounds: Size);
@@ -27,6 +25,9 @@ pub trait Paragraph: Sized + Default {
 
     /// Returns the text size of the [`Paragraph`] in [`Pixels`].
     fn size(&self) -> Pixels;
+
+    /// Returns the hint factor of the [`Paragraph`].
+    fn hint_factor(&self) -> Option<f32>;
 
     /// Returns the font of the [`Paragraph`].
     fn font(&self) -> Self::Font;
@@ -43,10 +44,13 @@ pub trait Paragraph: Sized + Default {
     /// Returns the [`Wrapping`] strategy of the [`Paragraph`]>
     fn wrapping(&self) -> Wrapping;
 
+    /// Returns the [`Ellipsis`] strategy of the [`Paragraph`]>
+    fn ellipsis(&self) -> Ellipsis;
+
     /// Returns the [`Shaping`] strategy of the [`Paragraph`]>
     fn shaping(&self) -> Shaping;
 
-    /// Returns the availalbe bounds used to layout the [`Paragraph`].
+    /// Returns the available bounds used to layout the [`Paragraph`].
     fn bounds(&self) -> Size;
 
     /// Returns the minimum boundaries that can fit the contents of the
@@ -169,6 +173,8 @@ impl<P: Paragraph> Plain<P> {
             align_y: self.raw.align_y(),
             shaping: self.raw.shaping(),
             wrapping: self.raw.wrapping(),
+            ellipsis: self.raw.ellipsis(),
+            hint_factor: self.raw.hint_factor(),
         }
     }
 }

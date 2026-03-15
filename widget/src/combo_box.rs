@@ -63,10 +63,7 @@ use crate::core::renderer;
 use crate::core::text;
 use crate::core::time::Instant;
 use crate::core::widget::{self, Widget};
-use crate::core::{
-    Clipboard, Element, Event, Length, Padding, Rectangle, Shell, Size, Theme,
-    Vector,
-};
+use crate::core::{Element, Event, Length, Padding, Pixels, Rectangle, Shell, Size, Theme, Vector};
 use crate::overlay::menu;
 use crate::text::LineHeight;
 use crate::text_input::{self, TextInput};
@@ -130,14 +127,8 @@ use std::fmt::Display;
 ///     }
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
-pub struct ComboBox<
-    'a,
-    T,
-    Message,
-    Theme = crate::Theme,
-    Renderer = crate::Renderer,
-> where
+pub struct ComboBox<'a, T, Message, Theme = crate::Theme, Renderer = crate::Renderer>
+where
     Theme: Catalog,
     Renderer: text::Renderer,
 {
@@ -145,14 +136,17 @@ pub struct ComboBox<
     text_input: TextInput<'a, TextInputEvent, Theme, Renderer>,
     font: Option<Renderer::Font>,
     selection: text_input::Value,
-    on_selected: Box<dyn Fn(T) -> Message>,
-    on_option_hovered: Option<Box<dyn Fn(T) -> Message>>,
+    on_selected: Box<dyn Fn(T) -> Message + 'a>,
+    on_option_hovered: Option<Box<dyn Fn(T) -> Message + 'a>>,
     on_open: Option<Message>,
     on_close: Option<Message>,
-    on_input: Option<Box<dyn Fn(String) -> Message>>,
-    menu_class: <Theme as menu::Catalog>::Class<'a>,
+    on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     padding: Padding,
     size: Option<f32>,
+    shaping: text::Shaping,
+    ellipsis: text::Ellipsis,
+    menu_class: <Theme as menu::Catalog>::Class<'a>,
+    menu_height: Length,
 }
 
 impl<'a, T, Message, Theme, Renderer> ComboBox<'a, T, Message, Theme, Renderer>
@@ -168,7 +162,7 @@ where
         state: &'a State<T>,
         placeholder: &str,
         selection: Option<&T>,
-        on_selected: impl Fn(T) -> Message + 'static,
+        on_selected: impl Fn(T) -> Message + 'a,
     ) -> Self {
         let text_input = TextInput::new(placeholder, &state.value())
             .on_input(TextInputEvent::TextChanged)
@@ -186,28 +180,25 @@ where
             on_input: None,
             on_open: None,
             on_close: None,
-            menu_class: <Theme as Catalog>::default_menu(),
             padding: text_input::DEFAULT_PADDING,
             size: None,
+            shaping: text::Shaping::default(),
+            ellipsis: text::Ellipsis::End,
+            menu_class: <Theme as Catalog>::default_menu(),
+            menu_height: Length::Shrink,
         }
     }
 
     /// Sets the message that should be produced when some text is typed into
     /// the [`TextInput`] of the [`ComboBox`].
-    pub fn on_input(
-        mut self,
-        on_input: impl Fn(String) -> Message + 'static,
-    ) -> Self {
+    pub fn on_input(mut self, on_input: impl Fn(String) -> Message + 'a) -> Self {
         self.on_input = Some(Box::new(on_input));
         self
     }
 
     /// Sets the message that will be produced when an option of the
     /// [`ComboBox`] is hovered using the arrow keys.
-    pub fn on_option_hovered(
-        mut self,
-        on_option_hovered: impl Fn(T) -> Message + 'static,
-    ) -> Self {
+    pub fn on_option_hovered(mut self, on_option_hovered: impl Fn(T) -> Message + 'a) -> Self {
         self.on_option_hovered = Some(Box::new(on_option_hovered));
         self
     }
@@ -249,9 +240,12 @@ where
     }
 
     /// Sets the text sixe of the [`ComboBox`].
-    pub fn size(mut self, size: f32) -> Self {
+    pub fn size(mut self, size: impl Into<Pixels>) -> Self {
+        let size = size.into();
+
         self.text_input = self.text_input.size(size);
-        self.size = Some(size);
+        self.size = Some(size.0);
+
         self
     }
 
@@ -271,6 +265,24 @@ where
         }
     }
 
+    /// Sets the height of the menu of the [`ComboBox`].
+    pub fn menu_height(mut self, menu_height: impl Into<Length>) -> Self {
+        self.menu_height = menu_height.into();
+        self
+    }
+
+    /// Sets the [`text::Shaping`] strategy of the [`ComboBox`].
+    pub fn shaping(mut self, shaping: text::Shaping) -> Self {
+        self.shaping = shaping;
+        self
+    }
+
+    /// Sets the [`text::Ellipsis`] strategy of the [`ComboBox`].
+    pub fn ellipsis(mut self, ellipsis: text::Ellipsis) -> Self {
+        self.ellipsis = ellipsis;
+        self
+    }
+
     /// Sets the style of the input of the [`ComboBox`].
     #[must_use]
     pub fn input_style(
@@ -278,8 +290,7 @@ where
         style: impl Fn(&Theme, text_input::Status) -> text_input::Style + 'a,
     ) -> Self
     where
-        <Theme as text_input::Catalog>::Class<'a>:
-            From<text_input::StyleFn<'a, Theme>>,
+        <Theme as text_input::Catalog>::Class<'a>: From<text_input::StyleFn<'a, Theme>>,
     {
         self.text_input = self.text_input.style(style);
         self
@@ -287,10 +298,7 @@ where
 
     /// Sets the style of the menu of the [`ComboBox`].
     #[must_use]
-    pub fn menu_style(
-        mut self,
-        style: impl Fn(&Theme) -> menu::Style + 'a,
-    ) -> Self
+    pub fn menu_style(mut self, style: impl Fn(&Theme) -> menu::Style + 'a) -> Self
     where
         <Theme as menu::Catalog>::Class<'a>: From<menu::StyleFn<'a, Theme>>,
     {
@@ -312,10 +320,7 @@ where
     /// Sets the style class of the menu of the [`ComboBox`].
     #[cfg(feature = "advanced")]
     #[must_use]
-    pub fn menu_class(
-        mut self,
-        class: impl Into<<Theme as menu::Catalog>::Class<'a>>,
-    ) -> Self {
+    pub fn menu_class(mut self, class: impl Into<<Theme as menu::Catalog>::Class<'a>>) -> Self {
         self.menu_class = class.into();
         self
     }
@@ -380,6 +385,25 @@ where
     /// was constructed with [`State::new`].
     pub fn options(&self) -> &[T] {
         &self.options
+    }
+
+    /// Pushes a new option to the [`State`].
+    pub fn push(&mut self, new_option: T) {
+        let mut inner = self.inner.borrow_mut();
+
+        inner.option_matchers.push(build_matcher(&new_option));
+        self.options.push(new_option);
+
+        inner.filtered_options = Filtered::new(
+            search(&self.options, &inner.option_matchers, &inner.value)
+                .cloned()
+                .collect(),
+        );
+    }
+
+    /// Returns ownership of the options of the [`State`].
+    pub fn into_options(self) -> Vec<T> {
+        self.options
     }
 
     fn value(&self) -> String {
@@ -520,7 +544,6 @@ where
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
@@ -548,7 +571,6 @@ where
             layout,
             cursor,
             renderer,
-            clipboard,
             &mut local_shell,
             viewport,
         );
@@ -559,6 +581,7 @@ where
 
         shell.request_redraw_at(local_shell.redraw_request());
         shell.request_input_method(local_shell.input_method());
+        shell.clipboard_mut().merge(local_shell.clipboard_mut());
 
         // Then finally react to them here
         for message in local_messages {
@@ -576,13 +599,9 @@ where
                 state.value = new_value;
 
                 state.filtered_options.update(
-                    search(
-                        &self.state.options,
-                        &state.option_matchers,
-                        &state.value,
-                    )
-                    .cloned()
-                    .collect(),
+                    search(&self.state.options, &state.option_matchers, &state.value)
+                        .cloned()
+                        .collect(),
                 );
             });
             shell.invalidate_layout();
@@ -599,14 +618,10 @@ where
 
         if is_focused {
             self.state.with_inner(|state| {
-                if !started_focused
-                    && let Some(on_option_hovered) = &mut self.on_option_hovered
-                {
+                if !started_focused && let Some(on_option_hovered) = &mut self.on_option_hovered {
                     let hovered_option = menu.hovered_option.unwrap_or(0);
 
-                    if let Some(option) =
-                        state.filtered_options.options.get(hovered_option)
-                    {
+                    if let Some(option) = state.filtered_options.options.get(hovered_option) {
                         shell.publish(on_option_hovered(option.clone()));
                         published_message_to_shell = true;
                     }
@@ -622,8 +637,7 @@ where
                     match (named_key, shift_modifier) {
                         (key::Named::Enter, _) => {
                             if let Some(index) = &menu.hovered_option
-                                && let Some(option) =
-                                    state.filtered_options.options.get(*index)
+                                && let Some(option) = state.filtered_options.options.get(*index)
                             {
                                 menu.new_selection = Some(option.clone());
                             }
@@ -634,11 +648,7 @@ where
                         (key::Named::ArrowUp, _) | (key::Named::Tab, true) => {
                             if let Some(index) = &mut menu.hovered_option {
                                 if *index == 0 {
-                                    *index = state
-                                        .filtered_options
-                                        .options
-                                        .len()
-                                        .saturating_sub(1);
+                                    *index = state.filtered_options.options.len().saturating_sub(1);
                                 } else {
                                     *index = index.saturating_sub(1);
                                 }
@@ -646,66 +656,42 @@ where
                                 menu.hovered_option = Some(0);
                             }
 
-                            if let Some(on_option_hovered) =
-                                &mut self.on_option_hovered
-                                && let Some(option) =
-                                    menu.hovered_option.and_then(|index| {
-                                        state
-                                            .filtered_options
-                                            .options
-                                            .get(index)
-                                    })
+                            if let Some(on_option_hovered) = &mut self.on_option_hovered
+                                && let Some(option) = menu
+                                    .hovered_option
+                                    .and_then(|index| state.filtered_options.options.get(index))
                             {
                                 // Notify the selection
-                                shell.publish((on_option_hovered)(
-                                    option.clone(),
-                                ));
+                                shell.publish((on_option_hovered)(option.clone()));
                                 published_message_to_shell = true;
                             }
 
                             shell.capture_event();
                             shell.request_redraw();
                         }
-                        (key::Named::ArrowDown, _)
-                        | (key::Named::Tab, false)
+                        (key::Named::ArrowDown, _) | (key::Named::Tab, false)
                             if !modifiers.shift() =>
                         {
                             if let Some(index) = &mut menu.hovered_option {
-                                if *index
-                                    >= state
-                                        .filtered_options
-                                        .options
-                                        .len()
-                                        .saturating_sub(1)
+                                if *index >= state.filtered_options.options.len().saturating_sub(1)
                                 {
                                     *index = 0;
                                 } else {
                                     *index = index.saturating_add(1).min(
-                                        state
-                                            .filtered_options
-                                            .options
-                                            .len()
-                                            .saturating_sub(1),
+                                        state.filtered_options.options.len().saturating_sub(1),
                                     );
                                 }
                             } else {
                                 menu.hovered_option = Some(0);
                             }
 
-                            if let Some(on_option_hovered) =
-                                &mut self.on_option_hovered
-                                && let Some(option) =
-                                    menu.hovered_option.and_then(|index| {
-                                        state
-                                            .filtered_options
-                                            .options
-                                            .get(index)
-                                    })
+                            if let Some(on_option_hovered) = &mut self.on_option_hovered
+                                && let Some(option) = menu
+                                    .hovered_option
+                                    .and_then(|index| state.filtered_options.options.get(index))
                             {
                                 // Notify the selection
-                                shell.publish((on_option_hovered)(
-                                    option.clone(),
-                                ));
+                                shell.publish((on_option_hovered)(option.clone()));
                                 published_message_to_shell = true;
                             }
 
@@ -735,13 +721,10 @@ where
                 let mut local_shell = Shell::new(&mut local_messages);
                 self.text_input.update(
                     &mut tree.children[0],
-                    &Event::Mouse(mouse::Event::ButtonPressed(
-                        mouse::Button::Left,
-                    )),
+                    &Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
                     layout,
                     mouse::Cursor::Unavailable,
                     renderer,
-                    clipboard,
                     &mut local_shell,
                     viewport,
                 );
@@ -781,13 +764,8 @@ where
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
-        self.text_input.mouse_interaction(
-            &tree.children[0],
-            layout,
-            cursor,
-            viewport,
-            renderer,
-        )
+        self.text_input
+            .mouse_interaction(&tree.children[0], layout, cursor, viewport, renderer)
     }
 
     fn draw(
@@ -860,20 +838,27 @@ where
                     menu,
                     &filtered_options.options,
                     hovered_option,
-                    |x| {
-                        tree.children[0]
-                    .state
-                    .downcast_mut::<text_input::State<Renderer::Paragraph>>(
-                    )
-                    .unfocus();
+                    &T::to_string,
+                    |selection| {
+                        self.state.with_inner_mut(|state| {
+                            state.value = String::new();
+                            state.filtered_options.update(self.state.options.clone());
+                        });
 
-                        (self.on_selected)(x)
+                        tree.children[0]
+                            .state
+                            .downcast_mut::<text_input::State<Renderer::Paragraph>>()
+                            .unfocus();
+
+                        (self.on_selected)(selection)
                     },
                     self.on_option_hovered.as_deref(),
                     &self.menu_class,
                 )
                 .width(bounds.width)
-                .padding(self.padding);
+                .padding(self.padding)
+                .shaping(self.shaping)
+                .ellipsis(self.ellipsis);
 
                 if let Some(font) = self.font {
                     menu = menu.font(font);
@@ -887,6 +872,7 @@ where
                     layout.position() + translation,
                     *viewport,
                     bounds.height,
+                    self.menu_height,
                 ))
             }
         } else {
@@ -895,8 +881,7 @@ where
     }
 }
 
-impl<'a, T, Message, Theme, Renderer>
-    From<ComboBox<'a, T, Message, Theme, Renderer>>
+impl<'a, T, Message, Theme, Renderer> From<ComboBox<'a, T, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
     T: Display + Clone + 'static,
@@ -951,18 +936,18 @@ where
         })
 }
 
-fn build_matchers<'a, T>(
-    options: impl IntoIterator<Item = T> + 'a,
-) -> Vec<String>
+fn build_matchers<'a, T>(options: impl IntoIterator<Item = T> + 'a) -> Vec<String>
 where
     T: Display + 'a,
 {
-    options
-        .into_iter()
-        .map(|opt| {
-            let mut matcher = opt.to_string();
-            matcher.retain(|c| c.is_ascii_alphanumeric());
-            matcher.to_lowercase()
-        })
-        .collect()
+    options.into_iter().map(build_matcher).collect()
+}
+
+fn build_matcher<T>(option: T) -> String
+where
+    T: Display,
+{
+    let mut matcher = option.to_string();
+    matcher.retain(|c| c.is_ascii_alphanumeric());
+    matcher.to_lowercase()
 }

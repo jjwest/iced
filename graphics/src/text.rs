@@ -11,7 +11,7 @@ pub use cosmic_text;
 
 use crate::core::alignment;
 use crate::core::font::{self, Font};
-use crate::core::text::{Alignment, Shaping, Wrapping};
+use crate::core::text::{Alignment, Ellipsis, Shaping, Wrapping};
 use crate::core::{Color, Pixels, Point, Rectangle, Size, Transformation};
 
 use std::borrow::Cow;
@@ -59,6 +59,10 @@ pub enum Text {
         align_y: alignment::Vertical,
         /// The shaping strategy of the text.
         shaping: Shaping,
+        /// The wrapping strategy of the text.
+        wrapping: Wrapping,
+        /// The ellipsis strategy of the text.
+        ellipsis: Ellipsis,
         /// The clip bounds of the text.
         clip_bounds: Rectangle,
     },
@@ -109,8 +113,7 @@ impl Text {
 ///
 /// [Fira Sans]: https://mozilla.github.io/Fira/
 #[cfg(feature = "fira-sans")]
-pub const FIRA_SANS_REGULAR: &[u8] =
-    include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice();
+pub const FIRA_SANS_REGULAR: &[u8] = include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice();
 
 /// Returns the global [`FontSystem`].
 pub fn font_system() -> &'static RwLock<FontSystem> {
@@ -134,7 +137,6 @@ pub fn font_system() -> &'static RwLock<FontSystem> {
 }
 
 /// A set of system fonts.
-#[allow(missing_debug_implementations)]
 pub struct FontSystem {
     raw: cosmic_text::FontSystem,
     loaded_fonts: HashSet<usize>,
@@ -157,9 +159,12 @@ impl FontSystem {
             }
         }
 
-        let _ = self.raw.db_mut().load_font_source(
-            cosmic_text::fontdb::Source::Binary(Arc::new(bytes.into_owned())),
-        );
+        let _ = self
+            .raw
+            .db_mut()
+            .load_font_source(cosmic_text::fontdb::Source::Binary(Arc::new(
+                bytes.into_owned(),
+            )));
 
         self.version = Version(self.version.0 + 1);
     }
@@ -201,16 +206,16 @@ impl PartialEq for Raw {
 
 /// Measures the dimensions of the given [`cosmic_text::Buffer`].
 pub fn measure(buffer: &cosmic_text::Buffer) -> (Size, bool) {
-    let (width, height, has_rtl) = buffer.layout_runs().fold(
-        (0.0, 0.0, false),
-        |(width, height, has_rtl), run| {
-            (
-                run.line_w.max(width),
-                height + run.line_height,
-                has_rtl || run.rtl,
-            )
-        },
-    );
+    let (width, height, has_rtl) =
+        buffer
+            .layout_runs()
+            .fold((0.0, 0.0, false), |(width, height, has_rtl), run| {
+                (
+                    run.line_w.max(width),
+                    height + run.line_height,
+                    has_rtl || run.rtl,
+                )
+            });
 
     (Size::new(width, height), has_rtl)
 }
@@ -227,9 +232,10 @@ pub fn align(
 
     if let Some(align) = to_align(alignment) {
         let has_multiple_lines = buffer.lines.len() > 1
-            || buffer.lines.first().is_some_and(|line| {
-                line.layout_opt().is_some_and(|layout| layout.len() > 1)
-            });
+            || buffer
+                .lines
+                .first()
+                .is_some_and(|line| line.layout_opt().is_some_and(|layout| layout.len() > 1));
 
         if has_multiple_lines {
             for line in &mut buffer.lines {
@@ -246,11 +252,7 @@ pub fn align(
     if needs_relayout {
         log::trace!("Relayouting paragraph...");
 
-        buffer.set_size(
-            font_system,
-            Some(min_bounds.width),
-            Some(min_bounds.height),
-        );
+        buffer.set_size(font_system, Some(min_bounds.width), Some(min_bounds.height));
     }
 
     min_bounds
@@ -347,9 +349,43 @@ pub fn to_wrap(wrapping: Wrapping) -> cosmic_text::Wrap {
     }
 }
 
+/// Converts some [`Ellipsis`] strategy to a [`cosmic_text::Ellipsize`] strategy.
+pub fn to_ellipsize(ellipsis: Ellipsis, max_height: f32) -> cosmic_text::Ellipsize {
+    let limit = cosmic_text::EllipsizeHeightLimit::Height(max_height);
+
+    match ellipsis {
+        Ellipsis::None => cosmic_text::Ellipsize::None,
+        Ellipsis::Start => cosmic_text::Ellipsize::Start(limit),
+        Ellipsis::Middle => cosmic_text::Ellipsize::Middle(limit),
+        Ellipsis::End => cosmic_text::Ellipsize::End(limit),
+    }
+}
+
 /// Converts some [`Color`] to a [`cosmic_text::Color`].
 pub fn to_color(color: Color) -> cosmic_text::Color {
     let [r, g, b, a] = color.into_rgba8();
 
     cosmic_text::Color::rgba(r, g, b, a)
+}
+
+/// Returns the ideal hint factor given the size and scale factor of some text.
+pub fn hint_factor(_size: Pixels, _scale_factor: Option<f32>) -> Option<f32> {
+    // TODO: Fix hinting in `cosmic-text`
+    // const MAX_HINTING_SIZE: f32 = 18.0;
+
+    // let hint_factor = scale_factor?;
+
+    // if size.0 * hint_factor < MAX_HINTING_SIZE {
+    //     Some(hint_factor)
+    // } else {
+    //     None
+    // }
+
+    None // Disable all text hinting for now
+}
+
+/// A text renderer coupled to `iced_graphics`.
+pub trait Renderer {
+    /// Draws the given [`Raw`] text.
+    fn fill_raw(&mut self, raw: Raw);
 }

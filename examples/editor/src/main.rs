@@ -1,10 +1,11 @@
 use iced::highlighter;
 use iced::keyboard;
 use iced::widget::{
-    self, button, center_x, column, container, horizontal_space, pick_list,
-    row, text, text_editor, toggler, tooltip,
+    button, center_x, column, container, operation, pick_list, row, space, text, text_editor,
+    toggler, tooltip,
 };
-use iced::{Center, Element, Fill, Font, Task, Theme};
+use iced::window;
+use iced::{Center, Element, Fill, Font, Task, Theme, Window};
 
 use std::ffi;
 use std::io;
@@ -53,13 +54,10 @@ impl Editor {
             },
             Task::batch([
                 Task::perform(
-                    load_file(format!(
-                        "{}/src/main.rs",
-                        env!("CARGO_MANIFEST_DIR")
-                    )),
+                    load_file(concat!(env!("CARGO_MANIFEST_DIR"), "/src/main.rs",)),
                     Message::FileOpened,
                 ),
-                widget::focus_next(),
+                operation::focus(EDITOR),
             ]),
         )
     }
@@ -97,7 +95,10 @@ impl Editor {
                 } else {
                     self.is_loading = true;
 
-                    Task::perform(open_file(), Message::FileOpened)
+                    window::oldest()
+                        .and_then(|id| window::run(id, open_file))
+                        .then(Task::future)
+                        .map(Message::FileOpened)
                 }
             }
             Message::FileOpened(result) => {
@@ -125,10 +126,7 @@ impl Editor {
                         text.push_str(ending.as_str());
                     }
 
-                    Task::perform(
-                        save_file(self.file.clone(), text),
-                        Message::FileSaved,
-                    )
+                    Task::perform(save_file(self.file.clone(), text), Message::FileSaved)
                 }
             }
             Message::FileSaved(result) => {
@@ -157,15 +155,16 @@ impl Editor {
                 "Save file",
                 self.is_dirty.then_some(Message::SaveFile)
             ),
-            horizontal_space(),
+            space::horizontal(),
             toggler(self.word_wrap)
                 .label("Word Wrap")
                 .on_toggle(Message::WordWrapToggled),
             pick_list(
-                highlighter::Theme::ALL,
                 Some(self.theme),
-                Message::ThemeSelected
+                highlighter::Theme::ALL,
+                highlighter::Theme::to_string,
             )
+            .on_select(Message::ThemeSelected)
             .text_size(14)
             .padding([5, 10])
         ]
@@ -184,11 +183,15 @@ impl Editor {
             } else {
                 String::from("New file")
             }),
-            horizontal_space(),
+            space::horizontal(),
             text({
-                let (line, column) = self.content.cursor_position();
+                let cursor = self.content.cursor();
 
-                format!("{}:{}", line + 1, column + 1)
+                format!(
+                    "{}:{}",
+                    cursor.position.line + 1,
+                    cursor.position.column + 1
+                )
             })
         ]
         .spacing(10);
@@ -196,6 +199,7 @@ impl Editor {
         column![
             controls,
             text_editor(&self.content)
+                .id(EDITOR)
                 .height(Fill)
                 .on_action(Message::ActionPerformed)
                 .wrapping(if self.word_wrap {
@@ -213,12 +217,8 @@ impl Editor {
                 )
                 .key_binding(|key_press| {
                     match key_press.key.as_ref() {
-                        keyboard::Key::Character("s")
-                            if key_press.modifiers.command() =>
-                        {
-                            Some(text_editor::Binding::Custom(
-                                Message::SaveFile,
-                            ))
+                        keyboard::Key::Character("s") if key_press.modifiers.command() => {
+                            Some(text_editor::Binding::Custom(Message::SaveFile))
                         }
                         _ => text_editor::Binding::from_key_press(key_press),
                     }
@@ -245,19 +245,21 @@ pub enum Error {
     IoError(io::ErrorKind),
 }
 
-async fn open_file() -> Result<(PathBuf, Arc<String>), Error> {
-    let picked_file = rfd::AsyncFileDialog::new()
+fn open_file(
+    window: &dyn Window,
+) -> impl Future<Output = Result<(PathBuf, Arc<String>), Error>> + use<> {
+    let dialog = rfd::AsyncFileDialog::new()
         .set_title("Open a text file...")
-        .pick_file()
-        .await
-        .ok_or(Error::DialogClosed)?;
+        .set_parent(&window);
 
-    load_file(picked_file).await
+    async move {
+        let picked_file = dialog.pick_file().await.ok_or(Error::DialogClosed)?;
+
+        load_file(picked_file).await
+    }
 }
 
-async fn load_file(
-    path: impl Into<PathBuf>,
-) -> Result<(PathBuf, Arc<String>), Error> {
+async fn load_file(path: impl Into<PathBuf>) -> Result<(PathBuf, Arc<String>), Error> {
     let path = path.into();
 
     let contents = tokio::fs::read_to_string(&path)
@@ -268,10 +270,7 @@ async fn load_file(
     Ok((path, contents))
 }
 
-async fn save_file(
-    path: Option<PathBuf>,
-    contents: String,
-) -> Result<PathBuf, Error> {
+async fn save_file(path: Option<PathBuf>, contents: String) -> Result<PathBuf, Error> {
     let path = if let Some(path) = path {
         path
     } else {
@@ -331,3 +330,5 @@ fn icon<'a, Message>(codepoint: char) -> Element<'a, Message> {
         .shaping(text::Shaping::Basic)
         .into()
 }
+
+const EDITOR: &str = "editor";

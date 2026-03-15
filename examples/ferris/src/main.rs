@@ -1,17 +1,15 @@
 use iced::time::Instant;
-use iced::widget::{
-    center, checkbox, column, container, image, pick_list, row, slider, text,
-};
+use iced::widget::{center, checkbox, column, container, image, pick_list, row, slider, text};
 use iced::window;
 use iced::{
-    Bottom, Center, Color, ContentFit, Degrees, Element, Fill, Radians,
-    Rotation, Subscription, Theme,
+    Bottom, Center, Color, ContentFit, Degrees, Element, Fill, Radians, Rotation, Subscription,
+    Theme,
 };
 
 pub fn main() -> iced::Result {
     iced::application(Image::default, Image::update, Image::view)
         .subscription(Image::subscription)
-        .theme(|_| Theme::TokyoNight)
+        .theme(Theme::TokyoNight)
         .run()
 }
 
@@ -46,19 +44,13 @@ impl Image {
             }
             Message::RotationStrategyChanged(strategy) => {
                 self.rotation = match strategy {
-                    RotationStrategy::Floating => {
-                        Rotation::Floating(self.rotation.radians())
-                    }
-                    RotationStrategy::Solid => {
-                        Rotation::Solid(self.rotation.radians())
-                    }
+                    RotationStrategy::Floating => Rotation::Floating(self.rotation.radians()),
+                    RotationStrategy::Solid => Rotation::Solid(self.rotation.radians()),
                 };
             }
             Message::RotationChanged(rotation) => {
                 self.rotation = match self.rotation {
-                    Rotation::Floating(_) => {
-                        Rotation::Floating(rotation.into())
-                    }
+                    Rotation::Floating(_) => Rotation::Floating(rotation.into()),
                     Rotation::Solid(_) => Rotation::Solid(rotation.into()),
                 };
             }
@@ -74,9 +66,8 @@ impl Image {
 
                 let delta = (now - self.last_tick).as_millis() as f32 / 1_000.0;
 
-                *self.rotation.radians_mut() = (self.rotation.radians()
-                    + ROTATION_SPEED * delta)
-                    % (2.0 * Radians::PI);
+                *self.rotation.radians_mut() =
+                    (self.rotation.radians() + ROTATION_SPEED * delta) % (2.0 * Radians::PI);
 
                 self.last_tick = now;
             }
@@ -92,17 +83,21 @@ impl Image {
     }
 
     fn view(&self) -> Element<'_, Message> {
+        static FERRIS: std::sync::LazyLock<image::Handle> = std::sync::LazyLock::new(|| {
+            image::Handle::from_path(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../tour/images/ferris.png",
+            ))
+        });
+
         let i_am_ferris = column![
             "Hello!",
             Element::from(
-                image(format!(
-                    "{}/../tour/images/ferris.png",
-                    env!("CARGO_MANIFEST_DIR")
-                ))
-                .width(self.width)
-                .content_fit(self.content_fit)
-                .rotation(self.rotation)
-                .opacity(self.opacity)
+                image(&FERRIS)
+                    .width(self.width)
+                    .content_fit(self.content_fit)
+                    .rotation(self.rotation)
+                    .opacity(self.opacity)
             )
             .explain(Color::WHITE),
             "I am Ferris!"
@@ -112,6 +107,7 @@ impl Image {
 
         let fit = row![
             pick_list(
+                Some(self.content_fit),
                 [
                     ContentFit::Contain,
                     ContentFit::Cover,
@@ -119,18 +115,19 @@ impl Image {
                     ContentFit::None,
                     ContentFit::ScaleDown
                 ],
-                Some(self.content_fit),
-                Message::ContentFitChanged
+                ContentFit::to_string,
             )
+            .on_select(Message::ContentFitChanged)
             .width(Fill),
             pick_list(
-                [RotationStrategy::Floating, RotationStrategy::Solid],
                 Some(match self.rotation {
                     Rotation::Floating(_) => RotationStrategy::Floating,
                     Rotation::Solid(_) => RotationStrategy::Solid,
                 }),
-                Message::RotationStrategyChanged,
+                [RotationStrategy::Floating, RotationStrategy::Solid],
+                RotationStrategy::to_string,
             )
+            .on_select(Message::RotationStrategyChanged,)
             .width(Fill),
         ]
         .spacing(10)
@@ -142,8 +139,7 @@ impl Image {
                 format!("Width: {}px", self.width)
             ),
             with_value(
-                slider(0.0..=1.0, self.opacity, Message::OpacityChanged)
-                    .step(0.01),
+                slider(0.0..=1.0, self.opacity, Message::OpacityChanged).step(0.01),
                 format!("Opacity: {:.2}", self.opacity)
             ),
             with_value(
@@ -153,7 +149,8 @@ impl Image {
                         self.rotation.degrees(),
                         Message::RotationChanged
                     ),
-                    checkbox("Spin!", self.spin)
+                    checkbox(self.spin)
+                        .label("Spin!")
                         .text_size(12)
                         .on_toggle(Message::SpinToggled)
                         .size(12)
@@ -200,10 +197,7 @@ impl std::fmt::Display for RotationStrategy {
     }
 }
 
-fn with_value<'a>(
-    control: impl Into<Element<'a, Message>>,
-    value: String,
-) -> Element<'a, Message> {
+fn with_value<'a>(control: impl Into<Element<'a, Message>>, value: String) -> Element<'a, Message> {
     column![control.into(), text(value).size(12).line_height(1.0)]
         .spacing(2)
         .align_x(Center)

@@ -12,27 +12,31 @@
 //! }
 //!
 //! fn view(state: &State) -> Element<'_, Message> {
-//!     image("ferris.png").into()
+//!     use std::sync::LazyLock;
+//!
+//!     static IMAGE: LazyLock<image::Handle> = LazyLock::new(|| image::Handle::from_path("ferris.png"));
+//!
+//!     image(&IMAGE).into()
 //! }
 //! ```
 //! <img src="https://github.com/iced-rs/iced/blob/9712b319bb7a32848001b96bd84977430f14b623/examples/resources/ferris.png?raw=true" width="300">
 pub mod viewer;
 pub use viewer::Viewer;
 
+use crate::core::border;
 use crate::core::image;
 use crate::core::layout;
 use crate::core::mouse;
 use crate::core::renderer;
 use crate::core::widget::Tree;
 use crate::core::{
-    ContentFit, Element, Layout, Length, Point, Rectangle, Rotation, Size,
-    Vector, Widget,
+    ContentFit, Element, Layout, Length, Point, Rectangle, Rotation, Size, Vector, Widget,
 };
 
 pub use image::{FilterMethod, Handle};
 
 /// Creates a new [`Viewer`] with the given image `Handle`.
-pub fn viewer<Handle>(handle: Handle) -> Viewer<Handle> {
+pub fn viewer<'a>(handle: &'a Handle) -> Viewer<'a, Handle> {
     Viewer::new(handle)
 }
 
@@ -50,16 +54,20 @@ pub fn viewer<Handle>(handle: Handle) -> Viewer<Handle> {
 /// }
 ///
 /// fn view(state: &State) -> Element<'_, Message> {
-///     image("ferris.png").into()
+///     use std::sync::LazyLock;
+///
+///     static IMAGE: LazyLock<image::Handle> = LazyLock::new(|| image::Handle::from_path("ferris.png"));
+///
+///     image(&IMAGE).into()
 /// }
 /// ```
 /// <img src="https://github.com/iced-rs/iced/blob/9712b319bb7a32848001b96bd84977430f14b623/examples/resources/ferris.png?raw=true" width="300">
-#[allow(missing_debug_implementations)]
-pub struct Image<Handle = image::Handle> {
-    handle: Handle,
+pub struct Image<'a, Handle = image::Handle> {
+    handle: &'a Handle,
     width: Length,
     height: Length,
     crop: Option<Rectangle<u32>>,
+    border_radius: border::Radius,
     content_fit: ContentFit,
     filter_method: FilterMethod,
     rotation: Rotation,
@@ -68,14 +76,15 @@ pub struct Image<Handle = image::Handle> {
     expand: bool,
 }
 
-impl<Handle> Image<Handle> {
+impl<'a, Handle> Image<'a, Handle> {
     /// Creates a new [`Image`] with the given path.
-    pub fn new(handle: impl Into<Handle>) -> Self {
+    pub fn new(handle: &'a Handle) -> Self {
         Image {
-            handle: handle.into(),
+            handle,
             width: Length::Shrink,
             height: Length::Shrink,
             crop: None,
+            border_radius: border::Radius::default(),
             content_fit: ContentFit::default(),
             filter_method: FilterMethod::default(),
             rotation: Rotation::default(),
@@ -165,6 +174,15 @@ impl<Handle> Image<Handle> {
         self.crop = Some(region);
         self
     }
+
+    /// Sets the [`border::Radius`] of the [`Image`].
+    ///
+    /// Currently, it will only be applied around the rectangular bounding box
+    /// of the [`Image`].
+    pub fn border_radius(mut self, border_radius: impl Into<border::Radius>) -> Self {
+        self.border_radius = border_radius.into();
+        self
+    }
 }
 
 /// Computes the layout of an [`Image`].
@@ -183,7 +201,7 @@ where
     Renderer: image::Renderer<Handle = Handle>,
 {
     // The raw w/h of the underlying image
-    let image_size = crop(renderer.measure_image(handle), region);
+    let image_size = crop(renderer.measure_image(handle).unwrap_or_default(), region);
 
     // The rotated size of the image
     let rotated_size = rotation.apply(image_size);
@@ -225,7 +243,7 @@ fn drawing_bounds<Renderer, Handle>(
 where
     Renderer: image::Renderer<Handle = Handle>,
 {
-    let original_size = renderer.measure_image(handle);
+    let original_size = renderer.measure_image(handle).unwrap_or_default();
     let image_size = crop(original_size, region);
     let rotated_size = rotation.apply(image_size);
     let adjusted_fit = content_fit.fit(rotated_size, bounds.size());
@@ -282,10 +300,6 @@ where
     Rectangle::new(position + crop_offset, final_size)
 }
 
-fn must_clip(bounds: Rectangle, drawing_bounds: Rectangle) -> bool {
-    drawing_bounds.width > bounds.width || drawing_bounds.height > bounds.height
-}
-
 fn crop(size: Size<u32>, region: Option<Rectangle<u32>>) -> Size<f32> {
     if let Some(region) = region {
         Size::new(
@@ -301,9 +315,9 @@ fn crop(size: Size<u32>, region: Option<Rectangle<u32>>) -> Size<f32> {
 pub fn draw<Renderer, Handle>(
     renderer: &mut Renderer,
     layout: Layout<'_>,
-    viewport: &Rectangle,
     handle: &Handle,
     crop: Option<Rectangle<u32>>,
+    border_radius: border::Radius,
     content_fit: ContentFit,
     filter_method: FilterMethod,
     rotation: Rotation,
@@ -314,66 +328,23 @@ pub fn draw<Renderer, Handle>(
     Handle: Clone,
 {
     let bounds = layout.bounds();
-    let drawing_bounds = drawing_bounds(
-        renderer,
-        bounds,
-        handle,
-        crop,
-        content_fit,
-        rotation,
-        scale,
-    );
+    let drawing_bounds =
+        drawing_bounds(renderer, bounds, handle, crop, content_fit, rotation, scale);
 
-    if must_clip(bounds, drawing_bounds) {
-        if let Some(bounds) = bounds.intersection(viewport) {
-            renderer.with_layer(bounds, |renderer| {
-                render(
-                    renderer,
-                    handle,
-                    filter_method,
-                    rotation,
-                    opacity,
-                    drawing_bounds,
-                );
-            });
-        }
-    } else {
-        render(
-            renderer,
-            handle,
-            filter_method,
-            rotation,
-            opacity,
-            drawing_bounds,
-        );
-    }
-}
-
-fn render<Renderer, Handle>(
-    renderer: &mut Renderer,
-    handle: &Handle,
-    filter_method: FilterMethod,
-    rotation: Rotation,
-    opacity: f32,
-    drawing_bounds: Rectangle,
-) where
-    Renderer: image::Renderer<Handle = Handle>,
-    Handle: Clone,
-{
     renderer.draw_image(
         image::Image {
             handle: handle.clone(),
+            border_radius,
             filter_method,
             rotation: rotation.radians(),
             opacity,
-            snap: true,
         },
         drawing_bounds,
+        bounds,
     );
 }
 
-impl<Message, Theme, Renderer, Handle> Widget<Message, Theme, Renderer>
-    for Image<Handle>
+impl<'a, Message, Theme, Renderer, Handle> Widget<Message, Theme, Renderer> for Image<'a, Handle>
 where
     Renderer: image::Renderer<Handle = Handle>,
     Handle: Clone,
@@ -394,7 +365,7 @@ where
         layout(
             renderer,
             limits,
-            &self.handle,
+            self.handle,
             self.width,
             self.height,
             self.crop,
@@ -406,20 +377,20 @@ where
 
     fn draw(
         &self,
-        _state: &Tree,
+        _tree: &Tree,
         renderer: &mut Renderer,
         _theme: &Theme,
         _style: &renderer::Style,
         layout: Layout<'_>,
         _cursor: mouse::Cursor,
-        viewport: &Rectangle,
+        _viewport: &Rectangle,
     ) {
         draw(
             renderer,
             layout,
-            viewport,
-            &self.handle,
+            self.handle,
             self.crop,
+            self.border_radius,
             self.content_fit,
             self.filter_method,
             self.rotation,
@@ -429,13 +400,13 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer, Handle> From<Image<Handle>>
+impl<'a, Message, Theme, Renderer, Handle> From<Image<'a, Handle>>
     for Element<'a, Message, Theme, Renderer>
 where
     Renderer: image::Renderer<Handle = Handle>,
     Handle: Clone + 'a,
 {
-    fn from(image: Image<Handle>) -> Element<'a, Message, Theme, Renderer> {
+    fn from(image: Image<'a, Handle>) -> Element<'a, Message, Theme, Renderer> {
         Element::new(image)
     }
 }

@@ -67,8 +67,8 @@ use crate::core::widget;
 use crate::core::widget::tree::{self, Tree};
 use crate::core::window;
 use crate::core::{
-    Background, Clipboard, Color, Element, Event, Layout, Length, Pixels,
-    Rectangle, Shell, Size, Theme, Widget,
+    Background, Color, Element, Event, Layout, Length, Pixels, Rectangle, Shell, Size, Theme,
+    Widget,
 };
 
 /// A circular button representing a choice.
@@ -129,7 +129,6 @@ use crate::core::{
 ///     column![a, b, c, all].into()
 /// }
 /// ```
-#[allow(missing_debug_implementations)]
 pub struct Radio<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer>
 where
     Theme: Catalog,
@@ -142,9 +141,9 @@ where
     size: f32,
     spacing: f32,
     text_size: Option<Pixels>,
-    text_line_height: text::LineHeight,
-    text_shaping: text::Shaping,
-    text_wrapping: text::Wrapping,
+    line_height: text::LineHeight,
+    shaping: text::Shaping,
+    wrapping: text::Wrapping,
     font: Option<Renderer::Font>,
     class: Theme::Class<'a>,
     last_status: Option<Status>,
@@ -170,12 +169,7 @@ where
     ///   * the current selected value
     ///   * a function that will be called when the [`Radio`] is selected. It
     ///     receives the value of the radio and must produce a `Message`.
-    pub fn new<F, V>(
-        label: impl Into<String>,
-        value: V,
-        selected: Option<V>,
-        f: F,
-    ) -> Self
+    pub fn new<F, V>(label: impl Into<String>, value: V, selected: Option<V>, f: F) -> Self
     where
         V: Eq + Copy,
         F: FnOnce(V) -> Message,
@@ -188,9 +182,9 @@ where
             size: Self::DEFAULT_SIZE,
             spacing: Self::DEFAULT_SPACING,
             text_size: None,
-            text_line_height: text::LineHeight::default(),
-            text_shaping: text::Shaping::default(),
-            text_wrapping: text::Wrapping::default(),
+            line_height: text::LineHeight::default(),
+            shaping: text::Shaping::default(),
+            wrapping: text::Wrapping::default(),
             font: None,
             class: Theme::default(),
             last_status: None,
@@ -222,23 +216,20 @@ where
     }
 
     /// Sets the text [`text::LineHeight`] of the [`Radio`] button.
-    pub fn text_line_height(
-        mut self,
-        line_height: impl Into<text::LineHeight>,
-    ) -> Self {
-        self.text_line_height = line_height.into();
+    pub fn line_height(mut self, line_height: impl Into<text::LineHeight>) -> Self {
+        self.line_height = line_height.into();
         self
     }
 
     /// Sets the [`text::Shaping`] strategy of the [`Radio`] button.
-    pub fn text_shaping(mut self, shaping: text::Shaping) -> Self {
-        self.text_shaping = shaping;
+    pub fn shaping(mut self, shaping: text::Shaping) -> Self {
+        self.shaping = shaping;
         self
     }
 
     /// Sets the [`text::Wrapping`] strategy of the [`Radio`] button.
-    pub fn text_wrapping(mut self, wrapping: text::Wrapping) -> Self {
-        self.text_wrapping = wrapping;
+    pub fn wrapping(mut self, wrapping: text::Wrapping) -> Self {
+        self.wrapping = wrapping;
         self
     }
 
@@ -312,13 +303,14 @@ where
                     widget::text::Format {
                         width: self.width,
                         height: Length::Shrink,
-                        line_height: self.text_line_height,
+                        line_height: self.line_height,
                         size: self.text_size,
                         font: self.font,
                         align_x: text::Alignment::Default,
                         align_y: alignment::Vertical::Top,
-                        shaping: self.text_shaping,
-                        wrapping: self.text_wrapping,
+                        shaping: self.shaping,
+                        wrapping: self.wrapping,
+                        ellipsis: text::Ellipsis::default(),
                     },
                 )
             },
@@ -327,12 +319,11 @@ where
 
     fn update(
         &mut self,
-        _state: &mut Tree,
+        _tree: &mut Tree,
         event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
@@ -370,7 +361,7 @@ where
 
     fn mouse_interaction(
         &self,
-        _state: &Tree,
+        _tree: &Tree,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
@@ -441,8 +432,7 @@ where
 
         {
             let label_layout = children.next().unwrap();
-            let state: &widget::text::State<Renderer::Paragraph> =
-                tree.state.downcast_ref();
+            let state: &widget::text::State<Renderer::Paragraph> = tree.state.downcast_ref();
 
             crate::text::draw(
                 renderer,
@@ -465,9 +455,7 @@ where
     Theme: 'a + Catalog,
     Renderer: 'a + text::Renderer,
 {
-    fn from(
-        radio: Radio<'a, Message, Theme, Renderer>,
-    ) -> Element<'a, Message, Theme, Renderer> {
+    fn from(radio: Radio<'a, Message, Theme, Renderer>) -> Element<'a, Message, Theme, Renderer> {
         Element::new(radio)
     }
 }

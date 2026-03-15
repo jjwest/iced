@@ -3,11 +3,10 @@ use crate::mouse;
 use crate::overlay;
 use crate::renderer;
 use crate::widget;
-use crate::{Clipboard, Event, Layout, Overlay, Shell, Size};
+use crate::{Event, Layout, Overlay, Shell, Size};
 
 /// An [`Overlay`] container that displays multiple overlay [`overlay::Element`]
 /// children.
-#[allow(missing_debug_implementations)]
 pub struct Group<'a, Message, Theme, Renderer> {
     children: Vec<overlay::Element<'a, Message, Theme, Renderer>>,
 }
@@ -45,8 +44,7 @@ where
     }
 }
 
-impl<'a, Message, Theme, Renderer> Default
-    for Group<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> Default for Group<'a, Message, Theme, Renderer>
 where
     Message: 'a,
     Theme: 'a,
@@ -78,13 +76,12 @@ where
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
     ) {
         for (child, layout) in self.children.iter_mut().zip(layout.children()) {
             child
                 .as_overlay_mut()
-                .update(event, layout, cursor, renderer, clipboard, shell);
+                .update(event, layout, cursor, renderer, shell);
         }
     }
 
@@ -127,12 +124,13 @@ where
         renderer: &Renderer,
         operation: &mut dyn widget::Operation,
     ) {
-        operation.container(None, layout.bounds(), &mut |operation| {
-            self.children.iter_mut().zip(layout.children()).for_each(
-                |(child, layout)| {
+        operation.traverse(&mut |operation| {
+            self.children
+                .iter_mut()
+                .zip(layout.children())
+                .for_each(|(child, layout)| {
                     child.as_overlay_mut().operate(layout, renderer, operation);
-                },
-            );
+                });
         });
     }
 
@@ -145,9 +143,7 @@ where
             .children
             .iter_mut()
             .zip(layout.children())
-            .filter_map(|(child, layout)| {
-                child.as_overlay_mut().overlay(layout, renderer)
-            })
+            .filter_map(|(child, layout)| child.as_overlay_mut().overlay(layout, renderer))
             .collect::<Vec<_>>();
 
         (!children.is_empty()).then(|| Group::with_children(children).overlay())

@@ -1,10 +1,9 @@
-use crate::core::{
-    self, Background, Color, Point, Rectangle, Svg, Transformation, renderer,
-};
+use crate::core::{self, Background, Color, Point, Rectangle, Svg, Transformation, renderer};
 use crate::graphics;
 use crate::graphics::Mesh;
 use crate::graphics::color;
 use crate::graphics::layer;
+use crate::graphics::mesh;
 use crate::graphics::text::{Editor, Paragraph};
 use crate::image::{self, Image};
 use crate::primitive::{self, Primitive};
@@ -49,14 +48,11 @@ impl Layer {
             position: [bounds.x, bounds.y],
             size: [bounds.width, bounds.height],
             border_color: color::pack(quad.border.color),
-            border_radius: (quad.border.radius * transformation.scale_factor())
-                .into(),
+            border_radius: (quad.border.radius * transformation.scale_factor()).into(),
             border_width: quad.border.width * transformation.scale_factor(),
             shadow_color: color::pack(quad.shadow.color),
-            shadow_offset: (quad.shadow.offset * transformation.scale_factor())
-                .into(),
-            shadow_blur_radius: quad.shadow.blur_radius
-                * transformation.scale_factor(),
+            shadow_offset: (quad.shadow.offset * transformation.scale_factor()).into(),
+            shadow_blur_radius: quad.shadow.blur_radius * transformation.scale_factor(),
             snap: quad.snap as u32,
         };
 
@@ -114,25 +110,43 @@ impl Layer {
             bounds: Rectangle::new(position, text.bounds) * transformation,
             color,
             size: text.size * transformation.scale_factor(),
-            line_height: text.line_height.to_absolute(text.size)
-                * transformation.scale_factor(),
+            line_height: text.line_height.to_absolute(text.size) * transformation.scale_factor(),
             font: text.font,
             align_x: text.align_x,
             align_y: text.align_y,
             shaping: text.shaping,
+            wrapping: text.wrapping,
+            ellipsis: text.ellipsis,
             clip_bounds: clip_bounds * transformation,
         };
 
         self.pending_text.push(text);
     }
 
+    pub fn draw_text_raw(&mut self, raw: graphics::text::Raw, transformation: Transformation) {
+        let raw = Text::Raw {
+            raw,
+            transformation,
+        };
+
+        self.pending_text.push(raw);
+    }
+
     pub fn draw_image(&mut self, image: Image, transformation: Transformation) {
         match image {
-            Image::Raster(image, bounds) => {
-                self.draw_raster(image, bounds, transformation);
+            Image::Raster {
+                image,
+                bounds,
+                clip_bounds,
+            } => {
+                self.draw_raster(image, bounds, clip_bounds, transformation);
             }
-            Image::Vector(svg, bounds) => {
-                self.draw_svg(svg, bounds, transformation);
+            Image::Vector {
+                svg,
+                bounds,
+                clip_bounds,
+            } => {
+                self.draw_svg(svg, bounds, clip_bounds, transformation);
             }
         }
     }
@@ -141,9 +155,17 @@ impl Layer {
         &mut self,
         image: core::Image,
         bounds: Rectangle,
+        clip_bounds: Rectangle,
         transformation: Transformation,
     ) {
-        let image = Image::Raster(image, bounds * transformation);
+        let image = Image::Raster {
+            image: core::Image {
+                border_radius: image.border_radius * transformation.scale_factor(),
+                ..image
+            },
+            bounds: bounds * transformation,
+            clip_bounds: clip_bounds * transformation,
+        };
 
         self.images.push(image);
     }
@@ -152,18 +174,19 @@ impl Layer {
         &mut self,
         svg: Svg,
         bounds: Rectangle,
+        clip_bounds: Rectangle,
         transformation: Transformation,
     ) {
-        let svg = Image::Vector(svg, bounds * transformation);
+        let svg = Image::Vector {
+            svg,
+            bounds: bounds * transformation,
+            clip_bounds: clip_bounds * transformation,
+        };
 
         self.images.push(svg);
     }
 
-    pub fn draw_mesh(
-        &mut self,
-        mut mesh: Mesh,
-        transformation: Transformation,
-    ) {
+    pub fn draw_mesh(&mut self, mut mesh: Mesh, transformation: Transformation) {
         match &mut mesh {
             Mesh::Solid {
                 transformation: local_transformation,
@@ -180,11 +203,7 @@ impl Layer {
         self.pending_meshes.push(mesh);
     }
 
-    pub fn draw_mesh_group(
-        &mut self,
-        meshes: Vec<Mesh>,
-        transformation: Transformation,
-    ) {
+    pub fn draw_mesh_group(&mut self, meshes: Vec<Mesh>, transformation: Transformation) {
         self.flush_meshes();
 
         self.triangles.push(triangle::Item::Group {
@@ -193,11 +212,7 @@ impl Layer {
         });
     }
 
-    pub fn draw_mesh_cache(
-        &mut self,
-        cache: triangle::Cache,
-        transformation: Transformation,
-    ) {
+    pub fn draw_mesh_cache(&mut self, cache: mesh::Cache, transformation: Transformation) {
         self.flush_meshes();
 
         self.triangles.push(triangle::Item::Cached {
@@ -206,11 +221,7 @@ impl Layer {
         });
     }
 
-    pub fn draw_text_group(
-        &mut self,
-        text: Vec<Text>,
-        transformation: Transformation,
-    ) {
+    pub fn draw_text_group(&mut self, text: Vec<Text>, transformation: Transformation) {
         self.flush_text();
 
         self.text.push(text::Item::Group {
@@ -219,11 +230,7 @@ impl Layer {
         });
     }
 
-    pub fn draw_text_cache(
-        &mut self,
-        cache: text::Cache,
-        transformation: Transformation,
-    ) {
+    pub fn draw_text_cache(&mut self, cache: text::Cache, transformation: Transformation) {
         self.flush_text();
 
         self.text.push(text::Item::Cached {
