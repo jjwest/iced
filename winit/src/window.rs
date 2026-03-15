@@ -52,8 +52,7 @@ where
         window: Arc<winit::window::Window>,
         program: &program::Instance<P>,
         compositor: &mut C,
-        exit_on_close_request: bool,
-        is_visible: bool,
+        settings: Settings,
         system_theme: theme::Mode,
     ) -> &mut Window<P, C> {
         let state = State::new(program, id, &window, system_theme);
@@ -62,6 +61,7 @@ where
         let surface =
             compositor.create_surface(window.clone(), surface_size.width, surface_size.height);
         let renderer = compositor.create_renderer();
+        let visible = settings.visible;
 
         let _ = self.aliases.insert(window.id(), id);
 
@@ -70,7 +70,6 @@ where
             Window {
                 raw: window,
                 state,
-                exit_on_close_request,
                 surface,
                 surface_version,
                 renderer,
@@ -78,7 +77,8 @@ where
                 redraw_at: None,
                 preedit: None,
                 ime_state: None,
-                visible: is_visible,
+                settings,
+                visible,
             },
         );
 
@@ -160,7 +160,7 @@ where
 {
     pub raw: Arc<winit::window::Window>,
     pub state: State<P>,
-    pub exit_on_close_request: bool,
+    pub settings: Settings,
     pub mouse_interaction: mouse::Interaction,
     pub surface: C::Surface,
     pub surface_version: u64,

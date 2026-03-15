@@ -298,15 +298,11 @@ where
                                 monitor,
                                 on_open,
                             } => {
-                                let exit_on_close_request = settings.exit_on_close_request;
-
-                                let visible = settings.visible;
-
                                 #[cfg(target_arch = "wasm32")]
                                 let target = settings.platform_specific.target.clone();
 
                                 let window_attributes = conversion::window_attributes(
-                                    settings,
+                                    settings.clone(),
                                     &title,
                                     scale_factor,
                                     monitor.or(event_loop.primary_monitor()),
@@ -382,8 +378,7 @@ where
                                     Event::WindowCreated {
                                         id,
                                         window: Arc::new(window),
-                                        exit_on_close_request,
-                                        make_visible: visible,
+                                        settings,
                                         on_open,
                                     },
                                 );
@@ -440,8 +435,7 @@ enum Event<Message: 'static> {
     WindowCreated {
         id: window::Id,
         window: Arc<winit::window::Window>,
-        exit_on_close_request: bool,
-        make_visible: bool,
+        settings: window::Settings,
         on_open: oneshot::Sender<window::Id>,
     },
     EventLoopAwakened(winit::event::Event<Message>),
@@ -544,8 +538,7 @@ async fn run_instance<P>(
             Event::WindowCreated {
                 id,
                 window,
-                exit_on_close_request,
-                make_visible,
+                settings,
                 on_open,
             } => {
                 if compositor.is_none() {
@@ -627,8 +620,7 @@ async fn run_instance<P>(
                     window,
                     &program,
                     compositor.as_mut().expect("Compositor must be initialized"),
-                    exit_on_close_request,
-                    make_visible,
+                    settings.clone(),
                     system_theme,
                 );
 
@@ -661,9 +653,20 @@ async fn run_instance<P>(
                 );
                 let _ = ui_caches.insert(id, user_interface::Cache::default());
 
-                if make_visible {
+                if settings.visible {
                     window.raw.set_visible(true);
                 }
+                window.raw.set_window_level(conversion::window_level(settings.level));
+                let _  = window.raw.request_inner_size(winit::dpi::LogicalSize {
+                    width: settings.size.width,
+                    height: settings.size.height,
+                });
+                if let core::window::Position::Specific(pos) = settings.position {
+                    window.raw.set_outer_position(winit::dpi::LogicalPosition {
+                        x: pos.x,
+                        y: pos.y,
+                    });
+                };
 
                 events.push((
                     id,
@@ -995,6 +998,18 @@ async fn run_instance<P>(
                         match window_event {
                             winit::event::WindowEvent::Resized(_) => {
                                 window.raw.request_redraw();
+                                if let Some(core::Event::Window(window::Event::Resized(size))) =
+                                    conversion::window_event(window_event.clone(), window.state.scale_factor(), window.state.modifiers())
+                                {
+                                    window.settings.size = size;
+                                }
+                            }
+                            winit::event::WindowEvent::Moved(..) => {
+                                if let Some(core::Event::Window(window::Event::Moved(pos))) =
+                                    conversion::window_event(window_event.clone(), window.state.scale_factor(), window.state.modifiers())
+                                {
+                                    window.settings.position = core::window::Position::Specific(pos);
+                                }
                             }
                             winit::event::WindowEvent::ThemeChanged(theme) => {
                                 let mode = conversion::theme_mode(theme);
@@ -1010,7 +1025,7 @@ async fn run_instance<P>(
                         }
 
                         if matches!(window_event, winit::event::WindowEvent::CloseRequested)
-                            && window.exit_on_close_request
+                            && window.settings.exit_on_close_request
                         {
                             run_action(
                                 Action::Window(runtime::window::Action::Close(id)),
@@ -1456,7 +1471,21 @@ fn run_action<'a, P, C>(
             }
             window::Action::SetMode(id, mode) => {
                 if let Some(window) = window_manager.get_mut(id) {
-                    window.raw.set_visible(conversion::visible(mode));
+                    let visible = conversion::visible(mode);
+                    window.raw.set_visible(visible);
+                    if visible {
+                        window.raw.set_window_level(conversion::window_level(window.settings.level));
+                        let _  = window.raw.request_inner_size(winit::dpi::LogicalSize {
+                            width: window.settings.size.width,
+                            height: window.settings.size.height,
+                        });
+                        if let core::window::Position::Specific(pos) = window.settings.position {
+                            window.raw.set_outer_position(winit::dpi::LogicalPosition {
+                                x: pos.x,
+                                y: pos.y,
+                            });
+                        };
+                    }
                     window
                         .raw
                         .set_fullscreen(conversion::fullscreen(window.raw.current_monitor(), mode));
