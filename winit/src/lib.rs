@@ -656,16 +656,17 @@ async fn run_instance<P>(
                 if settings.visible {
                     window.raw.set_visible(true);
                 }
-                window.raw.set_window_level(conversion::window_level(settings.level));
-                let _  = window.raw.request_inner_size(winit::dpi::LogicalSize {
+                window
+                    .raw
+                    .set_window_level(conversion::window_level(settings.level));
+                let _ = window.raw.request_inner_size(winit::dpi::LogicalSize {
                     width: settings.size.width,
                     height: settings.size.height,
                 });
                 if let core::window::Position::Specific(pos) = settings.position {
-                    window.raw.set_outer_position(winit::dpi::LogicalPosition {
-                        x: pos.x,
-                        y: pos.y,
-                    });
+                    window
+                        .raw
+                        .set_outer_position(winit::dpi::LogicalPosition { x: pos.x, y: pos.y });
                 };
 
                 events.push((
@@ -999,16 +1000,25 @@ async fn run_instance<P>(
                             winit::event::WindowEvent::Resized(_) => {
                                 window.raw.request_redraw();
                                 if let Some(core::Event::Window(window::Event::Resized(size))) =
-                                    conversion::window_event(window_event.clone(), window.state.scale_factor(), window.state.modifiers())
+                                    conversion::window_event(
+                                        window_event.clone(),
+                                        window.state.scale_factor(),
+                                        window.state.modifiers(),
+                                    )
                                 {
                                     window.settings.size = size;
                                 }
                             }
                             winit::event::WindowEvent::Moved(..) => {
                                 if let Some(core::Event::Window(window::Event::Moved(pos))) =
-                                    conversion::window_event(window_event.clone(), window.state.scale_factor(), window.state.modifiers())
+                                    conversion::window_event(
+                                        window_event.clone(),
+                                        window.state.scale_factor(),
+                                        window.state.modifiers(),
+                                    )
                                 {
-                                    window.settings.position = core::window::Position::Specific(pos);
+                                    window.settings.position =
+                                        core::window::Position::Specific(pos);
                                 }
                             }
                             winit::event::WindowEvent::ThemeChanged(theme) => {
@@ -1474,8 +1484,10 @@ fn run_action<'a, P, C>(
                     let visible = conversion::visible(mode);
                     window.raw.set_visible(visible);
                     if visible {
-                        window.raw.set_window_level(conversion::window_level(window.settings.level));
-                        let _  = window.raw.request_inner_size(winit::dpi::LogicalSize {
+                        window
+                            .raw
+                            .set_window_level(conversion::window_level(window.settings.level));
+                        let _ = window.raw.request_inner_size(winit::dpi::LogicalSize {
                             width: window.settings.size.width,
                             height: window.settings.size.height,
                         });
@@ -1621,23 +1633,8 @@ fn run_action<'a, P, C>(
                 let output = window_manager
                     .iter_mut()
                     .filter_map(|(_id, window)| {
-                        if let core::mouse::Cursor::Available(point) =
-                            window.state.cursor()
-                        {
-                            if let Some(position) = window.position() {
-                                let size = window.logical_size();
-                                if point.x >= 0.0
-                                    && point.x <= size.width
-                                    && point.y >= 0.0
-                                    && point.y <= size.height
-                                {
-                                    let global_pos = Point::new(
-                                        point.x + position.x,
-                                        point.y + position.y,
-                                    );
-                                    return Some(global_pos);
-                                }
-                            }
+                        if let core::mouse::Cursor::Available(point) = window.state.cursor() {
+                            return Some(point);
                         }
                         None
                     })

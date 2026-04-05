@@ -208,6 +208,12 @@ where
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
+        update(self, tree, event, layout, cursor, shell);
+
+        if shell.is_event_captured() {
+            return;
+        }
+
         self.content.as_widget_mut().update(
             &mut tree.children[0],
             event,
@@ -217,12 +223,6 @@ where
             shell,
             viewport,
         );
-
-        if shell.is_event_captured() {
-            return;
-        }
-
-        update(self, tree, event, layout, cursor, shell);
     }
 
     fn mouse_interaction(
