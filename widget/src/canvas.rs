@@ -223,6 +223,7 @@ where
         viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
+        let was_captured = shell.is_event_captured();
 
         let state = tree.state.downcast_mut::<P::State>();
         let is_redraw_request =
@@ -253,6 +254,28 @@ where
                 .is_some_and(|last_mouse_interaction| last_mouse_interaction != mouse_interaction)
             {
                 shell.request_redraw();
+            }
+        }
+
+        if was_captured {
+            let state = tree.state.downcast_mut::<P::State>();
+            if let Some(action) = self.program.update(
+                state,
+                &Event::Mouse(mouse::Event::CursorLeft),
+                bounds,
+                cursor,
+            ) {
+                let (message, redraw_request, event_status) = action.into_inner();
+
+                shell.request_redraw_at(redraw_request);
+
+                if let Some(message) = message {
+                    shell.publish(message);
+                }
+
+                if event_status == event::Status::Captured {
+                    shell.capture_event();
+                }
             }
         }
     }
