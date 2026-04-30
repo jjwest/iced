@@ -49,6 +49,14 @@ where
         self.size()
     }
 
+    /// Returns a [`Size`] hint for laying out the [`Widget`].
+    ///
+    /// This hint may be used by some widget containers to adjust their sizing strategy
+    /// during construction.
+    fn visible_size(&self, _tree: &Tree) -> Option<Size> {
+        None
+    }
+
     /// Returns the [`layout::Node`] of the [`Widget`].
     ///
     /// This [`layout::Node`] is used by the runtime to compute the [`Layout`] of the

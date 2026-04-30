@@ -235,13 +235,22 @@ where
             .zip(layout.children().rev())
             .enumerate()
         {
+            if shell.is_event_captured() {
+                child.as_widget_mut().update(
+                    tree,
+                    &Event::Mouse(mouse::Event::CursorLeft),
+                    layout,
+                    cursor,
+                    renderer,
+                    shell,
+                    viewport,
+                );
+                continue;
+            }
+
             child
                 .as_widget_mut()
                 .update(tree, event, layout, cursor, renderer, shell, viewport);
-
-            if shell.is_event_captured() {
-                return;
-            }
 
             if i < end && is_over && !cursor.is_levitating() {
                 let interaction = child

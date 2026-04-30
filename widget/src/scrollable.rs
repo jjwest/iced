@@ -39,6 +39,7 @@ use crate::core::{
     Rectangle, Shadow, Shell, Size, Theme, Vector, Widget,
 };
 
+use iced_renderer::core::layout::Node;
 pub use operation::scrollable::{AbsoluteOffset, RelativeOffset};
 
 /// A widget that can vertically display an infinite amount of content with a
@@ -459,11 +460,19 @@ where
                         Size::new(is_horizontal, is_vertical),
                     );
 
-                    self.content.as_widget_mut().layout(
+                    let child_size = self.content.as_widget_mut().layout(
                         &mut tree.children[0],
                         renderer,
                         &child_limits,
-                    )
+                    );
+
+                    if let Some(visible_size) =
+                        self.content.as_widget().visible_size(&mut tree.children[0])
+                    {
+                        Node::new(visible_size)
+                    } else {
+                        child_size
+                    }
                 },
             )
         };
