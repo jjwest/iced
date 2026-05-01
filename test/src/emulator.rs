@@ -90,11 +90,7 @@ impl<P: Program + 'static> Emulator<P> {
         let executor = P::Executor::new().expect("Create emulator executor");
 
         let renderer = executor
-            .block_on(P::Renderer::new(
-                settings.default_font,
-                settings.default_text_size,
-                None,
-            ))
+            .block_on(P::Renderer::new(renderer::Settings::from(&settings), None))
             .expect("Create emulator renderer");
 
         let runtime = Runtime::new(executor, sender);
@@ -172,9 +168,6 @@ impl<P: Program + 'static> Emulator<P> {
                 runtime::Action::Output(message) => {
                     self.update(program, message);
                 }
-                runtime::Action::LoadFont { .. } => {
-                    // TODO
-                }
                 runtime::Action::Widget(operation) => {
                     let mut user_interface = UserInterface::build(
                         program.view(&self.state, self.window),
@@ -215,35 +208,23 @@ impl<P: Program + 'static> Emulator<P> {
                         window::Action::GetOldest(sender) | window::Action::GetLatest(sender) => {
                             let _ = sender.send(Some(self.window));
                         }
-                        window::Action::GetSize(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(self.size);
-                            }
+                        window::Action::GetSize(id, sender) if id == self.window => {
+                            let _ = sender.send(self.size);
                         }
-                        window::Action::GetMaximized(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(false);
-                            }
+                        window::Action::GetMaximized(id, sender) if id == self.window => {
+                            let _ = sender.send(false);
                         }
-                        window::Action::GetMinimized(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(None);
-                            }
+                        window::Action::GetMinimized(id, sender) if id == self.window => {
+                            let _ = sender.send(None);
                         }
-                        window::Action::GetPosition(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(Some(Point::ORIGIN));
-                            }
+                        window::Action::GetPosition(id, sender) if id == self.window => {
+                            let _ = sender.send(Some(Point::ORIGIN));
                         }
-                        window::Action::GetScaleFactor(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(1.0);
-                            }
+                        window::Action::GetScaleFactor(id, sender) if id == self.window => {
+                            let _ = sender.send(1.0);
                         }
-                        window::Action::GetMode(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(core::window::Mode::Windowed);
-                            }
+                        window::Action::GetMode(id, sender) if id == self.window => {
+                            let _ = sender.send(core::window::Mode::Windowed);
                         }
                         _ => {
                             // Ignored
@@ -251,6 +232,10 @@ impl<P: Program + 'static> Emulator<P> {
                     }
                 }
                 runtime::Action::System(action) => {
+                    // TODO
+                    dbg!(action);
+                }
+                runtime::Action::Font(action) => {
                     // TODO
                     dbg!(action);
                 }

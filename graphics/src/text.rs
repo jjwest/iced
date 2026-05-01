@@ -120,16 +120,38 @@ pub fn font_system() -> &'static RwLock<FontSystem> {
     static FONT_SYSTEM: OnceLock<RwLock<FontSystem>> = OnceLock::new();
 
     FONT_SYSTEM.get_or_init(|| {
+        #[allow(unused_mut)]
+        let mut raw = cosmic_text::FontSystem::new_with_fonts([
+            cosmic_text::fontdb::Source::Binary(Arc::new(
+                include_bytes!("../fonts/Iced-Icons.ttf").as_slice(),
+            )),
+            #[cfg(feature = "fira-sans")]
+            cosmic_text::fontdb::Source::Binary(Arc::new(
+                include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice(),
+            )),
+        ]);
+
+        #[cfg(feature = "fira-sans")]
+        raw.db_mut().set_sans_serif_family("Fira Sans");
+
+        #[cfg(target_os = "macos")]
+        {
+            #[cfg(not(feature = "fira-sans"))]
+            raw.db_mut().set_sans_serif_family(".SF NS");
+            raw.db_mut().set_serif_family("Times New Roman");
+            raw.db_mut().set_monospace_family("Menlo");
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            #[cfg(not(feature = "fira-sans"))]
+            raw.db_mut().set_sans_serif_family("Segoe UI");
+            raw.db_mut().set_serif_family("Times New Roman");
+            raw.db_mut().set_monospace_family("Consolas");
+        }
+
         RwLock::new(FontSystem {
-            raw: cosmic_text::FontSystem::new_with_fonts([
-                cosmic_text::fontdb::Source::Binary(Arc::new(
-                    include_bytes!("../fonts/Iced-Icons.ttf").as_slice(),
-                )),
-                #[cfg(feature = "fira-sans")]
-                cosmic_text::fontdb::Source::Binary(Arc::new(
-                    include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice(),
-                )),
-            ]),
+            raw,
             loaded_fonts: HashSet::new(),
             version: Version::default(),
         })
@@ -167,6 +189,16 @@ impl FontSystem {
             )));
 
         self.version = Version(self.version.0 + 1);
+    }
+
+    /// Returns an iterator over the family names of all font faces
+    /// in the font database.
+    pub fn families(&self) -> impl Iterator<Item = &str> {
+        self.raw
+            .db()
+            .faces()
+            .filter_map(|face| face.families.first())
+            .map(|(name, _)| name.as_str())
     }
 
     /// Returns the current [`Version`] of the [`FontSystem`].
@@ -244,7 +276,7 @@ pub fn align(
 
             needs_relayout = true;
         } else if let Some(line) = buffer.lines.first_mut() {
-            needs_relayout = line.set_align(None);
+            needs_relayout |= line.set_align(None);
         }
     }
 
@@ -252,7 +284,8 @@ pub fn align(
     if needs_relayout {
         log::trace!("Relayouting paragraph...");
 
-        buffer.set_size(font_system, Some(min_bounds.width), Some(min_bounds.height));
+        buffer.set_size(Some(min_bounds.width), Some(min_bounds.height));
+        buffer.shape_until_scroll(font_system, false);
     }
 
     min_bounds

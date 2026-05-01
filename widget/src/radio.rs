@@ -329,11 +329,11 @@ where
     ) {
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
-            | Event::Touch(touch::Event::FingerPressed { .. }) => {
-                if cursor.is_over(layout.bounds()) {
-                    shell.publish(self.on_click.clone());
-                    shell.capture_event();
-                }
+            | Event::Touch(touch::Event::FingerPressed { .. })
+                if cursor.is_over(layout.bounds()) =>
+            {
+                shell.publish(self.on_click.clone());
+                shell.capture_event();
             }
             _ => {}
         }
@@ -519,7 +519,7 @@ impl Catalog for Theme {
 
 /// The default style of a [`Radio`] button.
 pub fn default(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
 
     let active = Style {
         background: Color::TRANSPARENT.into(),

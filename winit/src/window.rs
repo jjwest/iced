@@ -53,6 +53,7 @@ where
         program: &program::Instance<P>,
         compositor: &mut C,
         settings: Settings,
+        renderer_settings: renderer::Settings,
         system_theme: theme::Mode,
     ) -> &mut Window<P, C> {
         let state = State::new(program, id, &window, system_theme);
@@ -60,8 +61,7 @@ where
         let surface_version = state.surface_version();
         let surface =
             compositor.create_surface(window.clone(), surface_size.width, surface_size.height);
-        let renderer = compositor.create_renderer();
-        let visible = settings.visible;
+        let renderer = compositor.create_renderer(renderer_settings);
 
         let _ = self.aliases.insert(window.id(), id);
 
@@ -78,7 +78,6 @@ where
                 preedit: None,
                 ime_state: None,
                 settings,
-                visible,
             },
         );
 
@@ -167,7 +166,6 @@ where
     pub renderer: P::Renderer,
     pub redraw_at: Option<Instant>,
     preedit: Option<Preedit<P::Renderer>>,
-    pub visible: bool,
     ime_state: Option<(Rectangle, input_method::Purpose)>,
 }
 
@@ -186,10 +184,6 @@ where
                 x: position.x,
                 y: position.y,
             })
-    }
-
-    pub fn logical_size(&self) -> Size {
-        self.state.logical_size()
     }
 
     pub fn request_redraw(&mut self, redraw_request: RedrawRequest) {

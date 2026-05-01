@@ -49,6 +49,7 @@ use crate::futures::futures::{Future, StreamExt};
 use crate::futures::subscription;
 use crate::futures::{Executor, Runtime};
 use crate::graphics::{Compositor, Shell, compositor};
+use crate::runtime::font;
 use crate::runtime::image;
 use crate::runtime::system;
 use crate::runtime::user_interface::{self, UserInterface};
@@ -79,7 +80,8 @@ where
         .build()
         .expect("Create event loop");
 
-    let graphics_settings = settings.clone().into();
+    let compositor_settings = compositor::Settings::from(&settings);
+    let renderer_settings = renderer::Settings::from(&settings);
     let display_handle = event_loop.owned_display_handle();
 
     let (proxy, worker) = Proxy::new(event_loop.create_proxy());
@@ -133,7 +135,8 @@ where
         control_sender,
         display_handle,
         is_daemon,
-        graphics_settings,
+        compositor_settings,
+        renderer_settings,
         settings.fonts,
         system_theme_receiver,
     ));
@@ -466,7 +469,8 @@ async fn run_instance<P>(
     mut control_sender: mpsc::UnboundedSender<Control>,
     display_handle: winit::event_loop::OwnedDisplayHandle,
     is_daemon: bool,
-    graphics_settings: graphics::Settings,
+    compositor_settings: compositor::Settings,
+    mut renderer_settings: renderer::Settings,
     default_fonts: Vec<Cow<'static, [u8]>>,
     mut _system_theme: oneshot::Receiver<theme::Mode>,
 ) where
@@ -555,7 +559,7 @@ async fn run_instance<P>(
 
                             let mut compositor =
                                 <P::Renderer as compositor::Default>::Compositor::new(
-                                    graphics_settings,
+                                    compositor_settings,
                                     display_handle,
                                     window,
                                     shell,
@@ -621,6 +625,7 @@ async fn run_instance<P>(
                     &program,
                     compositor.as_mut().expect("Compositor must be initialized"),
                     settings.clone(),
+                    renderer_settings,
                     system_theme,
                 );
 
@@ -630,7 +635,7 @@ async fn run_instance<P>(
 
                 debug::theme_changed(|| {
                     if is_first {
-                        theme::Base::palette(window.state.theme())
+                        theme::Base::seed(window.state.theme())
                     } else {
                         None
                     }
@@ -673,7 +678,8 @@ async fn run_instance<P>(
                     id,
                     core::Event::Window(window::Event::Opened {
                         position: window.position(),
-                        size: window.logical_size(),
+                        size: window.state.logical_size(),
+                        scale_factor: window.raw.scale_factor() as f32,
                     }),
                 ));
 
@@ -731,6 +737,7 @@ async fn run_instance<P>(
                             &mut ui_caches,
                             &mut is_window_opening,
                             &mut system_theme,
+                            &mut renderer_settings,
                         );
                         actions += 1;
                     }
@@ -847,6 +854,7 @@ async fn run_instance<P>(
                                         &mut ui_caches,
                                         &mut is_window_opening,
                                         &mut system_theme,
+                                        &mut renderer_settings,
                                     );
                                 }
 
@@ -1051,6 +1059,7 @@ async fn run_instance<P>(
                                 &mut ui_caches,
                                 &mut is_window_opening,
                                 &mut system_theme,
+                                &mut renderer_settings,
                             );
                         } else {
                             window.state.update(&program, &window.raw, &window_event);
@@ -1130,9 +1139,7 @@ async fn run_instance<P>(
                                 }
                             }
 
-                            for (event, status) in
-                                window_events.into_iter().zip(statuses.into_iter())
-                            {
+                            for (event, status) in window_events.into_iter().zip(statuses) {
                                 runtime.broadcast(subscription::Event::Interaction {
                                     window: id,
                                     event,
@@ -1181,6 +1188,7 @@ async fn run_instance<P>(
                                     &mut ui_caches,
                                     &mut is_window_opening,
                                     &mut system_theme,
+                                    &mut renderer_settings,
                                 );
                             }
 
@@ -1296,6 +1304,7 @@ fn run_action<'a, P, C>(
     ui_caches: &mut FxHashMap<window::Id, user_interface::Cache>,
     is_window_opening: &mut bool,
     system_theme: &mut theme::Mode,
+    renderer_settings: &mut renderer::Settings,
 ) where
     P: Program,
     C: Compositor<Renderer = P::Renderer> + 'static,
@@ -1425,7 +1434,7 @@ fn run_action<'a, P, C>(
             }
             window::Action::GetSize(id, channel) => {
                 if let Some(window) = window_manager.get_mut(id) {
-                    let size = window.logical_size();
+                    let size = window.state.logical_size();
                     let _ = channel.send(Size::new(size.width, size.height));
                 }
             }
@@ -1680,6 +1689,43 @@ fn run_action<'a, P, C>(
                 }
             }
         },
+        Action::Font(action) => match action {
+            font::Action::Load { bytes, channel } => {
+                if let Some(compositor) = compositor {
+                    let result = compositor.load_font(bytes.clone());
+                    let _ = channel.send(result);
+                }
+            }
+            font::Action::List { channel } => {
+                if let Some(compositor) = compositor {
+                    let fonts = compositor.list_fonts();
+                    let _ = channel.send(fonts);
+                }
+            }
+            font::Action::SetDefaults { font, text_size } => {
+                renderer_settings.default_font = font;
+                renderer_settings.default_text_size = text_size;
+
+                let Some(compositor) = compositor else {
+                    return;
+                };
+
+                // Recreate renderers and relayout all windows
+                for (id, window) in window_manager.iter_mut() {
+                    window.renderer = compositor.create_renderer(*renderer_settings);
+
+                    let Some(ui) = interfaces.remove(&id) else {
+                        continue;
+                    };
+
+                    let size = window.state.logical_size();
+                    let ui = ui.relayout(size, &mut window.renderer);
+                    let _ = interfaces.insert(id, ui);
+
+                    window.raw.request_redraw();
+                }
+            }
+        },
         Action::Widget(operation) => {
             let mut current_operation = Some(operation);
 
@@ -1717,14 +1763,6 @@ fn run_action<'a, P, C>(
         Action::Event { window, event } => {
             events.push((window, event));
         }
-        Action::LoadFont { bytes, channel } => {
-            if let Some(compositor) = compositor {
-                // TODO: Error handling (?)
-                compositor.load_font(bytes.clone());
-
-                let _ = channel.send(Ok(()));
-            }
-        }
         Action::Tick => {
             for (_id, window) in window_manager.iter_mut() {
                 window.renderer.tick();
@@ -1737,7 +1775,7 @@ fn run_action<'a, P, C>(
                 };
 
                 let cache = ui.into_cache();
-                let size = window.logical_size();
+                let size = window.state.logical_size();
 
                 let _ = interfaces.insert(
                     id,
@@ -1775,7 +1813,7 @@ where
     debug::theme_changed(|| {
         window_manager
             .first()
-            .and_then(|window| theme::Base::palette(window.state.theme()))
+            .and_then(|window| theme::Base::seed(window.state.theme()))
     });
 
     cached_user_interfaces
