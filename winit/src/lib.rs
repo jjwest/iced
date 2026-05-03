@@ -971,6 +971,11 @@ async fn run_instance<P>(
 
                                     window.raw.request_redraw();
                                 }
+                                compositor::SurfaceError::Occluded => {
+                                    present_span.finish();
+
+                                    // Do nothing and wait for window to become visible again
+                                }
                                 _ => {
                                     present_span.finish();
 
@@ -1005,7 +1010,8 @@ async fn run_instance<P>(
                         };
 
                         match window_event {
-                            winit::event::WindowEvent::Resized(_) => {
+                            winit::event::WindowEvent::Resized(_)
+                            | winit::event::WindowEvent::Occluded(false) => {
                                 window.raw.request_redraw();
                                 if let Some(core::Event::Window(window::Event::Resized(size))) =
                                     conversion::window_event(
