@@ -520,6 +520,14 @@ where
                     log::trace!("Scrollbar status quo has changed");
                     state.is_scrollbar_visible = is_scrollbar_visible;
 
+                    if !is_scrollbar_visible {
+                        if is_vertical {
+                            state.offset_y = Offset::Absolute(0.0);
+                        } else {
+                            state.offset_x = Offset::Absolute(0.0);
+                        }
+                    }
+
                     layout(
                         if is_vertical && state.is_scrollbar_visible {
                             padding
