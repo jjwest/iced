@@ -38,8 +38,10 @@
 //! to help them keep continuity, you need to make sure the hint stays the same
 //! for the same items in your user interface between `view` calls.
 pub mod column;
+pub mod stack;
 
 pub use column::Column;
+pub use stack::Stack;
 
 /// Creates a keyed [`Column`] with the given children.
 ///
@@ -71,5 +73,38 @@ macro_rules! keyed_column {
     );
     ($(($key:expr, $x:expr)),+ $(,)?) => (
         $crate::keyed::Column::with_children(vec![$(($key, $crate::core::Element::from($x))),+])
+    );
+}
+
+/// Creates a keyed [`Stack`] with the given children.
+///
+/// Keyed stacks distribute content vertically while keeping continuity.
+///
+/// # Example
+/// ```no_run
+/// # mod iced { pub mod widget { pub use iced_widget::*; } }
+/// # pub type State = ();
+/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+/// use iced::widget::keyed_stack;
+///
+/// enum Message {
+///     // ...
+/// }
+///
+/// fn view(state: &State) -> Element<'_, Message> {
+///     keyed_stack![
+///         (0, "Item 0"),
+///         (1, "Item 1"),
+///         (2, "Item 2"),
+///     ].into()
+/// }
+/// ```
+#[macro_export]
+macro_rules! keyed_stack {
+    () => (
+        $crate::keyed::Stack::new()
+    );
+    ($(($key:expr, $x:expr)),+ $(,)?) => (
+        $crate::keyed::Stack::with_children(vec![$(($key, $crate::core::Element::from($x))),+])
     );
 }
