@@ -74,7 +74,6 @@ where
     height: Length,
     direction: Direction,
     auto_scroll: bool,
-    current_offset_y: Option<f32>,
     content: Element<'a, Message, Theme, Renderer>,
     on_scroll: Option<Box<dyn Fn(Viewport) -> Message + 'a>>,
     class: Theme::Class<'a>,
@@ -101,7 +100,6 @@ where
             width: Length::Shrink,
             height: Length::Shrink,
             direction: direction.into(),
-            current_offset_y: None,
             auto_scroll: false,
             content: content.into(),
             on_scroll: None,
@@ -151,12 +149,6 @@ where
     /// Sets the height of the [`Scrollable`].
     pub fn height(mut self, height: impl Into<Length>) -> Self {
         self.height = height.into();
-        self
-    }
-
-    /// Sets the current y offset of the [`Scrollable`].
-    pub fn current_offset_y(mut self, offset: f32) -> Self {
-        self.current_offset_y = Some(offset);
         self
     }
 
@@ -405,7 +397,7 @@ where
     }
 
     fn state(&self) -> tree::State {
-        tree::State::new(State::new(self.current_offset_y))
+        tree::State::new(State::new())
     }
 
     fn children(&self) -> Vec<Tree> {
@@ -1657,16 +1649,8 @@ impl Viewport {
 }
 
 impl State {
-    fn new(offset_y: Option<f32>) -> Self {
-        Self {
-            offset_y: Offset::Absolute(offset_y.unwrap_or(0.0)),
-            offset_x: Offset::Absolute(0.0),
-            interaction: Interaction::None,
-            keyboard_modifiers: keyboard::Modifiers::default(),
-            last_notified: None,
-            last_scrolled: None,
-            is_scrollbar_visible: true,
-        }
+    fn new() -> Self {
+        State::default()
     }
 
     fn scroll(&mut self, delta: Vector<f32>, bounds: Rectangle, content_bounds: Rectangle) {
