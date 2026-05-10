@@ -180,44 +180,38 @@ where
 
         let state = state.downcast_mut::<State<Key>>();
 
-        let mut to_remove = Vec::new();
-        for (old_idx, old_key) in state.keys.iter().enumerate() {
-            if !self.keys.contains(old_key) {
-                to_remove.push(old_idx);
+        let mut i = 0;
+        while i < state.keys.len() {
+            if !self.keys.contains(&state.keys[i]) {
+                let _ = state.keys.remove(i);
+                let _ = children.remove(i);
+            } else {
+                i += 1;
             }
-        }
-        let mut removed = 0;
-        for idx in to_remove {
-            let _ = state.keys.remove(idx - removed);
-            let _ = children.remove(idx - removed);
-            removed += 1;
         }
 
         for (new_idx, new_key) in self.keys.iter().enumerate() {
             if !state.keys.contains(new_key) {
                 state.keys.push(*new_key);
-                children.push(Tree::new(self.children[new_idx].as_widget()));
+                children.push(Tree::new(&self.children[new_idx]));
             }
         }
 
-        let mut swapped = Vec::new();
         for (new_idx, new_key) in self.keys.iter().enumerate() {
-            if let Some(current_idx) = state.keys.iter().position(|key| *key == *new_key) {
-                if current_idx != new_idx && !swapped.contains(new_key) {
-                    swapped.push(new_key.clone());
-                    swapped.push(state.keys[new_idx].clone());
-                    children.swap(current_idx, new_idx);
-                }
-                self.children[new_idx]
-                    .as_widget()
-                    .diff(&mut children[new_idx]);
-            } else {
-                children.insert(new_idx, Tree::new(self.children[new_idx].as_widget()));
-            }
-        }
+            let current_idx = state
+                .keys
+                .iter()
+                .position(|key| *key == *new_key)
+                .expect("New key should have been inserted");
 
-        if state.keys != self.keys {
-            state.keys.clone_from(&self.keys);
+            if current_idx != new_idx {
+                state.keys.swap(current_idx, new_idx);
+                children.swap(current_idx, new_idx);
+            }
+
+            self.children[new_idx]
+                .as_widget()
+                .diff(&mut children[new_idx]);
         }
     }
 
