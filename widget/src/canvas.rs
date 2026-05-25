@@ -52,13 +52,13 @@ mod program;
 
 pub use program::Program;
 
-pub use crate::Action;
 pub use crate::core::event::Event;
 pub use crate::graphics::cache::Group;
 pub use crate::graphics::geometry::{
-    Fill, Gradient, Image, LineCap, LineDash, LineJoin, Path, Stroke, Style, Text, fill, gradient,
-    path, stroke,
+    fill, gradient, path, stroke, Fill, Gradient, Image, LineCap, LineDash, LineJoin, Path, Stroke,
+    Style, Text,
 };
+pub use crate::Action;
 
 use crate::core::event;
 use crate::core::layout::{self, Layout};
@@ -312,13 +312,21 @@ where
 
         let state = tree.state.downcast_ref::<P::State>();
 
-        renderer.with_translation(Vector::new(bounds.x, bounds.y), |renderer| {
-            let layers = self.program.draw(state, renderer, theme, bounds, cursor);
+        let layers = self.program.draw(state, renderer, theme, bounds, cursor);
 
-            for layer in layers {
-                renderer.draw_geometry(layer);
+        for (idx, layer) in layers.into_iter().enumerate() {
+            if idx > 0 {
+                renderer.with_layer(bounds, |renderer| {
+                    renderer.with_translation(Vector::new(bounds.x, bounds.y), |renderer| {
+                        renderer.draw_geometry(layer)
+                    })
+                });
+            } else {
+                renderer.with_translation(Vector::new(bounds.x, bounds.y), |renderer| {
+                    renderer.draw_geometry(layer);
+                });
             }
-        });
+        }
     }
 }
 
