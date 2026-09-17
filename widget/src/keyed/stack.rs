@@ -58,8 +58,8 @@ where
     /// call [`Stack::width`] or [`Stack::height`] accordingly.
     pub fn from_vecs(keys: Vec<Key>, children: Vec<Element<'a, Message, Theme, Renderer>>) -> Self {
         Self {
-            width: Length::Shrink,
-            height: Length::Shrink,
+            width: Length::Fit,
+            height: Length::Fit,
             keys,
             children,
             clip: false,
@@ -164,7 +164,7 @@ where
 
     fn state(&self) -> tree::State {
         tree::State::new(State {
-            keys: self.keys.clone(),
+            keys: Vec::<Key>::new(),
         })
     }
 
