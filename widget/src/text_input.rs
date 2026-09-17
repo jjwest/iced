@@ -372,6 +372,7 @@ where
         }
 
         let status = if is_disabled {
+            state.input.unfocus();
             Status::Disabled
         } else if state.input.is_focused() {
             Status::Focused {
