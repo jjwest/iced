@@ -38,7 +38,6 @@ pub use error::Error;
 pub use proxy::Proxy;
 
 use crate::core::backend;
-use crate::core::mouse;
 use crate::core::renderer;
 use crate::core::shell;
 use crate::core::theme;
@@ -54,6 +53,7 @@ use crate::futures::{Executor, Runtime};
 use crate::graphics::{Compositor, Shell, compositor};
 use crate::runtime::font;
 use crate::runtime::image;
+use crate::runtime::mouse;
 use crate::runtime::system;
 use crate::runtime::user_interface::{self, UserInterface};
 use crate::runtime::{Action, Task};
@@ -1533,7 +1533,7 @@ fn run_action<'a, P, C>(
             }
             window::Action::ShowSystemMenu(id) => {
                 if let Some(window) = window_manager.get_mut(id)
-                    && let mouse::Cursor::Available(point) = window.state.cursor()
+                    && let crate::core::mouse::Cursor::Available(point) = window.state.cursor()
                 {
                     window.raw.show_window_menu(winit::dpi::LogicalPosition {
                         x: point.x,
@@ -1611,6 +1611,29 @@ fn run_action<'a, P, C>(
 
                     window.raw.request_redraw();
                 }
+            }
+        },
+        Action::Mouse(action) => match action {
+            mouse::Action::GetPosition(channel) => {
+                let output = window_manager
+                    .iter_mut()
+                    .filter_map(|(_id, window)| {
+                        if let core::mouse::Cursor::Available(mouse_pos) = window.state.cursor() {
+                            match window.position() {
+                                Some(position) => {
+                                    let global_pos = Point::new(
+                                        mouse_pos.x + position.x,
+                                        mouse_pos.y + position.y,
+                                    );
+                                    return Some(global_pos);
+                                }
+                                None => return Some(mouse_pos),
+                            }
+                        }
+                        None
+                    })
+                    .next();
+                let _ = channel.send(output);
             }
         },
         Action::System(action) => match action {

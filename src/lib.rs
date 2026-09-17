@@ -437,14 +437,14 @@
 //!                     }
 //!                  }
 //!             } else {
-//!                 Task::none()    
+//!                 Task::none()
 //!             }
 //!         }
 //!         Message::Conversation(message) => {
 //!             if let Screen::Conversation(conversation) = &mut state.screen {
 //!                 conversation.update(message).map(Message::Conversation)
 //!             } else {
-//!                 Task::none()    
+//!                 Task::none()
 //!             }
 //!         }
 //!     }
@@ -599,6 +599,7 @@ pub mod keyboard {
 pub mod mouse {
     //! Listen and react to mouse events.
     pub use crate::core::mouse::{Button, Cursor, Event, Interaction, ScrollDelta};
+    pub use crate::runtime::mouse::get_position;
 }
 
 pub mod system {
