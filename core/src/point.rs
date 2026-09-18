@@ -137,6 +137,14 @@ impl Point<f32> {
         }
     }
 
+    /// Floors the [`Point`] coordinates.
+    pub fn floor(self) -> Self {
+        Point {
+            x: self.x.floor(),
+            y: self.y.floor(),
+        }
+    }
+
     /// Snaps the [`Point`] to __unsigned__ integer coordinates.
     pub fn snap(self) -> Point<u32> {
         Point {
