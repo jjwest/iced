@@ -270,7 +270,7 @@ impl geometry::frame::Backend for Frame {
     }
 
     fn fill_text(&mut self, text: impl Into<geometry::Text>) {
-        let text = text.into();
+        let mut text = text.into();
 
         let (scale_x, scale_y) = self.transforms.current.scale();
 
@@ -281,12 +281,19 @@ impl geometry::frame::Backend for Frame {
         {
             let (bounds, size, line_height) = if self.transforms.current.is_identity() {
                 (
-                    Rectangle::new(text.position, Size::new(text.max_width, f32::INFINITY)),
+                    Rectangle::new(
+                        text.position.round(),
+                        Size::new(text.max_width, f32::INFINITY),
+                    ),
                     text.size,
                     text.line_height,
                 )
             } else {
-                let position = self.transforms.current.transform_point(text.position);
+                let position = self
+                    .transforms
+                    .current
+                    .transform_point(text.position)
+                    .round();
 
                 let size = Pixels(text.size.0 * scale_y);
 
@@ -317,6 +324,7 @@ impl geometry::frame::Backend for Frame {
                 clip_bounds: self.clip_bounds,
             });
         } else {
+            text.position = text.position.round();
             text.draw_with(|path, color| self.fill(&path, color));
         }
     }
