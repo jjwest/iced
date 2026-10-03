@@ -13,8 +13,8 @@ pub struct Grid<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer> {
     height: Length,
     children: Vec<Element<'a, Message, Theme, Renderer>>,
     child_layouts: Vec<ChildLayout>,
-    column_max: u8,
-    row_max: u8,
+    column_max: usize,
+    row_max: usize,
     spacing: Size,
 }
 
@@ -39,8 +39,8 @@ where
     pub fn cell(
         self,
         child: impl Into<Element<'a, Message, Theme, Renderer>>,
-        row: u8,
-        column: u8,
+        row: usize,
+        column: usize,
     ) -> Self {
         self.cells(child, row, row, column, column)
     }
@@ -49,10 +49,10 @@ where
     pub fn cells(
         mut self,
         child: impl Into<Element<'a, Message, Theme, Renderer>>,
-        row_start: u8,
-        row_end: u8,
-        column_start: u8,
-        column_end: u8,
+        row_start: usize,
+        row_end: usize,
+        column_start: usize,
+        column_end: usize,
     ) -> Self {
         assert!(row_start <= row_end);
         assert!(column_start <= column_end);
@@ -110,17 +110,31 @@ where
     }
 
     fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, _limits: &Limits) -> Node {
-        let mut column_widths = vec![0.0f32; (self.column_max + 1) as usize];
+        #[derive(Clone, Copy)]
+        struct Meta {
+            pos: f32,
+            size: f32,
+        }
 
+        // First pass.
+        // Gather the minimum width for each column based on
+        // cells that occupy just that column.
+        let mut column_widths = vec![
+            Meta {
+                pos: 0.0,
+                size: 0.0
+            };
+            self.column_max + 1
+        ];
         for column in 0..self.column_max + 1 {
-            for ((child, layout), tree) in self
+            for ((child, tree), layout) in self
                 .children
                 .iter_mut()
-                .zip(&self.child_layouts)
                 .zip(&mut tree.children)
+                .zip(&self.child_layouts)
             {
                 if layout.column_start == column && layout.column_end == column {
-                    column_widths[column as usize] = column_widths[column as usize].max(
+                    column_widths[column].size = column_widths[column].size.max(
                         child
                             .as_widget_mut()
                             .layout(tree, renderer, &Limits::NONE.width(Length::Shrink))
@@ -129,25 +143,90 @@ where
                     )
                 }
             }
+            if column > 0 {
+                column_widths[column].pos = column_widths[column - 1].pos
+                    + column_widths[column - 1].size
+                    + self.spacing.width;
+            }
         }
 
-        let mut row_heights = vec![0.0f32; (self.row_max + 1) as usize];
-
+        // Second pass.
+        // Gather the minimum height for each row based on
+        // cells that occupy just that row.
+        let mut row_heights = vec![
+            Meta {
+                pos: 0.0,
+                size: 0.0
+            };
+            self.row_max + 1
+        ];
         for row in 0..self.row_max + 1 {
-            for ((child, layout), tree) in self
+            for ((child, tree), layout) in self
                 .children
                 .iter_mut()
-                .zip(&self.child_layouts)
                 .zip(&mut tree.children)
+                .zip(&self.child_layouts)
             {
                 if layout.row_start == row && layout.row_end == row {
-                    row_heights[row as usize] = row_heights[row as usize].max(
+                    row_heights[row].size = row_heights[row].size.max(
                         child
                             .as_widget_mut()
                             .layout(tree, renderer, &Limits::NONE.height(Length::Shrink))
                             .size()
                             .height,
                     )
+                }
+            }
+            if row > 0 {
+                row_heights[row].pos =
+                    row_heights[row - 1].pos + row_heights[row - 1].size + self.spacing.height;
+            }
+        }
+
+        // Third pass.
+        // Adjust the width of columns and heights of rows if necessary,
+        // taking into account multi-column and multi-row cells, but ignoring Fills.
+        for ((child, tree), layout) in self
+            .children
+            .iter_mut()
+            .zip(&mut tree.children)
+            .zip(&self.child_layouts)
+        {
+            if layout.column_start != layout.column_end || layout.row_start != layout.row_end {
+                let sizing = child.as_widget().size();
+                let size = child
+                    .as_widget_mut()
+                    .layout(
+                        tree,
+                        renderer,
+                        &Limits::NONE.width(Length::Shrink).height(Length::Shrink),
+                    )
+                    .size();
+                if !matches!(sizing.width, Length::Fill | Length::FillPortion(..)) {
+                    let total_width = column_widths[layout.column_start..layout.column_end + 1]
+                        .iter()
+                        .map(|meta| meta.size)
+                        .sum();
+                    if size.width > total_width && layout.column_end < self.column_max {
+                        let diff = size.width - total_width;
+                        column_widths[layout.column_end].size += diff;
+                        for meta in &mut column_widths[layout.column_end + 1..] {
+                            meta.pos += diff;
+                        }
+                    }
+                }
+                if !matches!(sizing.height, Length::Fill | Length::FillPortion(..)) {
+                    let total_height = row_heights[layout.row_start..layout.row_end + 1]
+                        .iter()
+                        .map(|meta| meta.size)
+                        .sum();
+                    if size.height > total_height && layout.row_end < self.row_max {
+                        let diff = size.height - total_height;
+                        row_heights[layout.row_end].size += diff;
+                        for meta in &mut row_heights[layout.row_end + 1..] {
+                            meta.pos += diff;
+                        }
+                    }
                 }
             }
         }
@@ -157,33 +236,27 @@ where
         let mut width = 0.0f32;
         let mut height = 0.0f32;
 
-        let mut row_offset = 0.0;
-        for (row, &row_height) in row_heights.iter().enumerate() {
-            let row = row as u8;
-            let mut column_offset = 0.0;
-            for (column, &column_width) in column_widths.iter().enumerate() {
-                let column = column as u8;
-                for ((child, layout), tree) in self
-                    .children
-                    .iter_mut()
-                    .zip(&self.child_layouts)
-                    .zip(&mut tree.children)
-                {
-                    if layout.row_start == row
-                        && layout.row_end == row
-                        && layout.column_start == column
-                        && layout.column_end == column
-                    {
-                        let limits = Limits::new(Size::ZERO, Size::new(column_width, row_height));
-                        let node = child.as_widget_mut().layout(tree, renderer, &limits);
-                        child_nodes.push(node.move_to(Point::new(column_offset, row_offset)));
-                    }
-                }
-                column_offset += column_width + self.spacing.width;
-                width = width.max(column_offset);
-            }
-            row_offset += row_height + self.spacing.height;
-            height = height.max(row_offset);
+        for ((child, tree), layout) in self
+            .children
+            .iter_mut()
+            .zip(&mut tree.children)
+            .zip(&self.child_layouts)
+        {
+            let x = column_widths[layout.column_start].pos;
+            let y = row_heights[layout.row_start].pos;
+            let child_width = column_widths[layout.column_start..layout.column_end + 1]
+                .iter()
+                .map(|meta| meta.size)
+                .sum();
+            let child_height = row_heights[layout.row_start..layout.row_end + 1]
+                .iter()
+                .map(|meta| meta.size)
+                .sum();
+            let limits = Limits::new(Size::ZERO, Size::new(child_width, child_height));
+            let node = child.as_widget_mut().layout(tree, renderer, &limits);
+            width = width.max(x + child_width);
+            height = height.max(y + child_height);
+            child_nodes.push(node.move_to(Point::new(x, y)));
         }
 
         Node::with_children(Size::new(width, height), child_nodes)
@@ -298,10 +371,10 @@ where
 }
 
 struct ChildLayout {
-    column_start: u8,
-    column_end: u8,
-    row_start: u8,
-    row_end: u8,
+    column_start: usize,
+    column_end: usize,
+    row_start: usize,
+    row_end: usize,
 }
 
 impl<'a, Message, Theme, Renderer> From<Grid<'a, Message, Theme, Renderer>>
