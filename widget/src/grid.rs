@@ -109,7 +109,7 @@ where
         }
     }
 
-    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, _limits: &Limits) -> Node {
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &Limits) -> Node {
         #[derive(Clone, Copy)]
         struct Meta {
             pos: f32,
@@ -231,10 +231,37 @@ where
             }
         }
 
-        let mut child_nodes = Vec::with_capacity(self.children.len());
+        let intrinsic_size = Size::new(
+            column_widths[self.column_max].pos + column_widths[self.column_max].size,
+            row_heights[self.row_max].pos + row_heights[self.row_max].size,
+        );
+        let size = limits.resolve(self.width, self.height, intrinsic_size);
 
-        let mut width = 0.0f32;
-        let mut height = 0.0f32;
+        if size.width > intrinsic_size.width {
+            let extra_width = size.width - intrinsic_size.width;
+            for meta in &mut column_widths {
+                let factor = meta.size / intrinsic_size.width;
+                meta.size += extra_width * factor;
+            }
+            for i in 1..column_widths.len() {
+                column_widths[i].pos =
+                    column_widths[i - 1].pos + column_widths[i - 1].size + self.spacing.width;
+            }
+        }
+
+        if size.height > intrinsic_size.height {
+            let extra_height = size.height - intrinsic_size.height;
+            for meta in &mut row_heights {
+                let factor = meta.size / intrinsic_size.height;
+                meta.size += extra_height * factor;
+            }
+            for i in 1..row_heights.len() {
+                row_heights[i].pos =
+                    row_heights[i - 1].pos + row_heights[i - 1].size + self.spacing.height;
+            }
+        }
+
+        let mut child_nodes = Vec::with_capacity(self.children.len());
 
         for ((child, tree), layout) in self
             .children
@@ -254,12 +281,10 @@ where
                 .sum();
             let limits = Limits::new(Size::ZERO, Size::new(child_width, child_height));
             let node = child.as_widget_mut().layout(tree, renderer, &limits);
-            width = width.max(x + child_width);
-            height = height.max(y + child_height);
             child_nodes.push(node.move_to(Point::new(x, y)));
         }
 
-        Node::with_children(Size::new(width, height), child_nodes)
+        Node::with_children(size, child_nodes)
     }
 
     fn operate(
@@ -337,17 +362,19 @@ where
         viewport: &Rectangle,
     ) {
         if let Some(viewport) = layout.bounds().intersection(viewport) {
-            for ((child, tree), layout) in self
-                .children
-                .iter()
-                .zip(&tree.children)
-                .zip(layout.children())
-                .filter(|(_, layout)| layout.bounds().intersects(&viewport))
-            {
-                child
-                    .as_widget()
-                    .draw(tree, renderer, theme, style, layout, cursor, &viewport);
-            }
+            renderer.with_layer(viewport, |renderer| {
+                for ((child, tree), layout) in self
+                    .children
+                    .iter()
+                    .zip(&tree.children)
+                    .zip(layout.children())
+                    .filter(|(_, layout)| layout.bounds().intersects(&viewport))
+                {
+                    child
+                        .as_widget()
+                        .draw(tree, renderer, theme, style, layout, cursor, &viewport);
+                }
+            });
         }
     }
 
