@@ -10,7 +10,8 @@ use iced::animation;
 use iced::border;
 use iced::time::{Instant, milliseconds};
 use iced::widget::{
-    button, container, float, grid, image, mouse_area, opaque, scrollable, sensor, space, stack,
+    button, container, dynamic_grid, float, image, mouse_area, opaque, scrollable, sensor, space,
+    stack,
 };
 use iced::window;
 use iced::{
@@ -268,7 +269,7 @@ impl Gallery {
 
         let gallery = grid(images)
             .fluid(Preview::WIDTH)
-            .height(grid::aspect_ratio(Preview::WIDTH, Preview::HEIGHT))
+            .height(dynamic_grid::aspect_ratio(Preview::WIDTH, Preview::HEIGHT))
             .spacing(10);
 
         let content = container(scrollable(gallery).spacing(10).auto_scroll(true)).padding(10);

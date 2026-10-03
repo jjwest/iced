@@ -22,6 +22,7 @@ pub mod checkbox;
 pub mod combo_box;
 pub mod component;
 pub mod container;
+pub mod dynamic_grid;
 pub mod float;
 pub mod grid;
 pub mod keyed;
@@ -63,9 +64,11 @@ pub use component::Component;
 #[doc(no_inline)]
 pub use container::Container;
 #[doc(no_inline)]
+pub use dynamic_grid::DynamicGrid;
+#[doc(no_inline)]
 pub use float::Float;
 #[doc(no_inline)]
-pub use grid::Grid;
+pub use grid::Grid as GridLayout;
 #[doc(no_inline)]
 pub use lazy::Lazy;
 #[doc(no_inline)]

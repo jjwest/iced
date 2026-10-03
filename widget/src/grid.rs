@@ -1,239 +1,192 @@
 //! Distribute content on a grid.
-use crate::core::layout::{self, Layout};
-use crate::core::mouse;
+
+use crate::core::layout::{Limits, Node};
+use crate::core::mouse::{self, Cursor};
 use crate::core::overlay;
-use crate::core::renderer;
+use crate::core::renderer::Style;
 use crate::core::widget::{Operation, Tree};
-use crate::core::{Element, Event, Length, Pixels, Rectangle, Shell, Size, Vector, Widget};
+use crate::core::{Element, Event, Layout, Length, Point, Rectangle, Shell, Size, Vector, Widget};
 
 /// A container that distributes its contents on a responsive grid.
 pub struct Grid<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer> {
-    spacing: f32,
-    columns: Constraint,
-    width: Option<Pixels>,
-    height: Sizing,
+    width: Length,
+    height: Length,
     children: Vec<Element<'a, Message, Theme, Renderer>>,
-}
-
-enum Constraint {
-    MaxWidth(Pixels),
-    Amount(usize),
+    child_layouts: Vec<ChildLayout>,
+    column_max: u8,
+    row_max: u8,
+    spacing: Size,
 }
 
 impl<'a, Message, Theme, Renderer> Grid<'a, Message, Theme, Renderer>
 where
     Renderer: crate::core::Renderer,
 {
-    /// Creates an empty [`Grid`].
+    /// Create a new Grid widget
     pub fn new() -> Self {
-        Self::from_vec(Vec::new())
-    }
-
-    /// Creates a [`Grid`] with the given capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self::from_vec(Vec::with_capacity(capacity))
-    }
-
-    /// Creates a [`Grid`] with the given elements.
-    pub fn with_children(
-        children: impl IntoIterator<Item = Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
-        let iterator = children.into_iter();
-
-        Self::with_capacity(iterator.size_hint().0).extend(iterator)
-    }
-
-    /// Creates a [`Grid`] from an already allocated [`Vec`].
-    pub fn from_vec(children: Vec<Element<'a, Message, Theme, Renderer>>) -> Self {
         Self {
-            spacing: 0.0,
-            columns: Constraint::Amount(3),
-            width: None,
-            height: Sizing::AspectRatio(1.0),
-            children,
+            width: Length::Fit,
+            height: Length::Fit,
+            children: Vec::new(),
+            child_layouts: Vec::new(),
+            column_max: 0,
+            row_max: 0,
+            spacing: Size::ZERO,
         }
     }
 
-    /// Sets the spacing _between_ cells in the [`Grid`].
-    pub fn spacing(mut self, amount: impl Into<Pixels>) -> Self {
-        self.spacing = amount.into().0;
-        self
+    /// Add a single-cell entry to the grid.
+    pub fn cell(
+        self,
+        child: impl Into<Element<'a, Message, Theme, Renderer>>,
+        row: u8,
+        column: u8,
+    ) -> Self {
+        self.cells(child, row, row, column, column)
     }
 
-    /// Sets the width of the [`Grid`] in [`Pixels`].
-    ///
-    /// By default, a [`Grid`] will [`Fill`] its parent.
-    ///
-    /// [`Fill`]: Length::Fill
-    pub fn width(mut self, width: impl Into<Pixels>) -> Self {
-        self.width = Some(width.into());
-        self
-    }
-
-    /// Sets the height of the [`Grid`].
-    ///
-    /// By default, a [`Grid`] uses a cell aspect ratio of `1.0` (i.e. squares).
-    pub fn height(mut self, height: impl Into<Sizing>) -> Self {
-        self.height = height.into();
-        self
-    }
-
-    /// Sets the amount of columns in the [`Grid`].
-    pub fn columns(mut self, column: usize) -> Self {
-        self.columns = Constraint::Amount(column);
-        self
-    }
-
-    /// Makes the amount of columns dynamic in the [`Grid`], never
-    /// exceeding the provided `max_width`.
-    pub fn fluid(mut self, max_width: impl Into<Pixels>) -> Self {
-        self.columns = Constraint::MaxWidth(max_width.into());
-        self
-    }
-
-    /// Adds an [`Element`] to the [`Grid`].
-    pub fn push(mut self, child: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
+    /// Add a multi-cell entry to the grid.
+    pub fn cells(
+        mut self,
+        child: impl Into<Element<'a, Message, Theme, Renderer>>,
+        row_start: u8,
+        row_end: u8,
+        column_start: u8,
+        column_end: u8,
+    ) -> Self {
+        assert!(row_start <= row_end);
+        assert!(column_start <= column_end);
+        self.column_max = self.column_max.max(column_end);
+        self.row_max = self.row_max.max(row_end);
         self.children.push(child.into());
+        self.child_layouts.push(ChildLayout {
+            row_start,
+            row_end,
+            column_start,
+            column_end,
+        });
         self
     }
 
-    /// Adds an element to the [`Grid`], if `Some`.
-    pub fn push_maybe(
-        self,
-        child: Option<impl Into<Element<'a, Message, Theme, Renderer>>>,
-    ) -> Self {
-        if let Some(child) = child {
-            self.push(child)
-        } else {
-            self
-        }
+    /// Set the width of the grid.
+    pub fn width(mut self, width: Length) -> Self {
+        self.width = width;
+        self
     }
 
-    /// Extends the [`Grid`] with the given children.
-    pub fn extend(
-        self,
-        children: impl IntoIterator<Item = Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
-        children.into_iter().fold(self, Self::push)
+    /// Set the height of the grid.
+    pub fn height(mut self, height: Length) -> Self {
+        self.height = height;
+        self
+    }
+
+    /// Set the spacing for the grid columns.
+    pub fn spacing_x(mut self, amount: f32) -> Self {
+        self.spacing.width = amount;
+        self
+    }
+
+    /// Set the spacing for the grid rows.
+    pub fn spacing_y(mut self, amount: f32) -> Self {
+        self.spacing.height = amount;
+        self
     }
 }
 
-impl<Message, Renderer> Default for Grid<'_, Message, Renderer>
+impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for Grid<'a, Message, Theme, Renderer>
 where
     Renderer: crate::core::Renderer,
 {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<'a, Message, Theme, Renderer: crate::core::Renderer>
-    FromIterator<Element<'a, Message, Theme, Renderer>> for Grid<'a, Message, Theme, Renderer>
-{
-    fn from_iter<T: IntoIterator<Item = Element<'a, Message, Theme, Renderer>>>(iter: T) -> Self {
-        Self::with_children(iter)
-    }
-}
-
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Grid<'_, Message, Theme, Renderer>
-where
-    Renderer: crate::core::Renderer,
-{
-    fn diff(&mut self, tree: &mut Tree) {
-        tree.diff_children(&mut self.children);
-    }
-
     fn size(&self) -> Size<Length> {
-        Size {
-            width: self
-                .width
-                .map(|pixels| Length::Fixed(pixels.0))
-                .unwrap_or(Length::Fill),
-            height: match self.height {
-                Sizing::AspectRatio(_) => Length::Shrink,
-                Sizing::EvenlyDistribute(length) => length,
-            },
+        Size::new(self.width, self.height)
+    }
+
+    fn diff(&mut self, tree: &mut Tree) {
+        tree.children.resize_with(self.children.len(), Tree::empty);
+        for (old_child, new_child) in tree.children.iter_mut().zip(&mut self.children) {
+            old_child.diff(new_child);
         }
     }
 
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        let size = self.size();
-        let limits = limits.width(size.width).height(size.height);
-        let available = limits.max();
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, _limits: &Limits) -> Node {
+        let mut column_widths = vec![0.0f32; (self.column_max + 1) as usize];
 
-        if limits.compression().width && self.width.is_none() {
-            return layout::Node::new(Size::ZERO);
-        }
-
-        let cells_per_row = match self.columns {
-            // width = n * (cell + spacing) - spacing, given n > 0
-            Constraint::MaxWidth(pixels) => {
-                ((available.width + self.spacing) / (pixels.0 + self.spacing)).ceil() as usize
+        for column in 0..self.column_max + 1 {
+            for ((child, layout), tree) in self
+                .children
+                .iter_mut()
+                .zip(&self.child_layouts)
+                .zip(&mut tree.children)
+            {
+                if layout.column_start == column && layout.column_end == column {
+                    column_widths[column as usize] = column_widths[column as usize].max(
+                        child
+                            .as_widget_mut()
+                            .layout(tree, renderer, &Limits::NONE.width(Length::Shrink))
+                            .size()
+                            .width,
+                    )
+                }
             }
-            Constraint::Amount(amount) => amount,
-        };
-
-        if self.children.is_empty() || cells_per_row == 0 {
-            return layout::Node::new(limits.resolve(size.width, size.height, Size::ZERO));
         }
 
-        let cell_width =
-            (available.width - self.spacing * (cells_per_row - 1) as f32) / cells_per_row as f32;
+        let mut row_heights = vec![0.0f32; (self.row_max + 1) as usize];
 
-        let cell_height = match self.height {
-            Sizing::AspectRatio(ratio) => Some(cell_width / ratio),
-            Sizing::EvenlyDistribute(Length::Shrink) => None,
-            Sizing::EvenlyDistribute(_) => {
-                let total_rows = self.children.len().div_ceil(cells_per_row);
-                Some(
-                    (available.height - self.spacing * (total_rows - 1) as f32) / total_rows as f32,
-                )
+        for row in 0..self.row_max + 1 {
+            for ((child, layout), tree) in self
+                .children
+                .iter_mut()
+                .zip(&self.child_layouts)
+                .zip(&mut tree.children)
+            {
+                if layout.row_start == row && layout.row_end == row {
+                    row_heights[row as usize] = row_heights[row as usize].max(
+                        child
+                            .as_widget_mut()
+                            .layout(tree, renderer, &Limits::NONE.height(Length::Shrink))
+                            .size()
+                            .height,
+                    )
+                }
             }
-        };
+        }
 
-        let cell_limits = layout::Limits::new(
-            Size::new(cell_width, cell_height.unwrap_or(0.0)),
-            Size::new(cell_width, cell_height.unwrap_or(available.height)),
-        );
+        let mut child_nodes = Vec::with_capacity(self.children.len());
 
-        let mut nodes = Vec::with_capacity(self.children.len());
-        let mut x = 0.0;
-        let mut y = 0.0;
-        let mut row_height = 0.0f32;
+        let mut width = 0.0f32;
+        let mut height = 0.0f32;
 
-        for (i, (child, tree)) in self.children.iter_mut().zip(&mut tree.children).enumerate() {
-            let node = child
-                .as_widget_mut()
-                .layout(tree, renderer, &cell_limits)
-                .move_to((x, y));
-
-            let size = node.size();
-
-            x += size.width + self.spacing;
-            row_height = row_height.max(size.height);
-
-            if (i + 1) % cells_per_row == 0 {
-                y += cell_height.unwrap_or(row_height) + self.spacing;
-                x = 0.0;
-                row_height = 0.0;
+        let mut row_offset = 0.0;
+        for (row, &row_height) in row_heights.iter().enumerate() {
+            let row = row as u8;
+            let mut column_offset = 0.0;
+            for (column, &column_width) in column_widths.iter().enumerate() {
+                let column = column as u8;
+                for ((child, layout), tree) in self
+                    .children
+                    .iter_mut()
+                    .zip(&self.child_layouts)
+                    .zip(&mut tree.children)
+                {
+                    if layout.row_start == row
+                        && layout.row_end == row
+                        && layout.column_start == column
+                        && layout.column_end == column
+                    {
+                        let limits = Limits::new(Size::ZERO, Size::new(column_width, row_height));
+                        let node = child.as_widget_mut().layout(tree, renderer, &limits);
+                        child_nodes.push(node.move_to(Point::new(column_offset, row_offset)));
+                    }
+                }
+                column_offset += column_width + self.spacing.width;
+                width = width.max(column_offset);
             }
-
-            nodes.push(node);
+            row_offset += row_height + self.spacing.height;
+            height = height.max(row_offset);
         }
 
-        if x == 0.0 {
-            y -= self.spacing;
-        } else {
-            y += cell_height.unwrap_or(row_height);
-        }
-
-        layout::Node::with_children(Size::new(available.width, y), nodes)
+        Node::with_children(Size::new(width, height), child_nodes)
     }
 
     fn operate(
@@ -305,9 +258,9 @@ where
         tree: &Tree,
         renderer: &mut Renderer,
         theme: &Theme,
-        style: &renderer::Style,
+        style: &Style,
         layout: Layout<'_>,
-        cursor: mouse::Cursor,
+        cursor: Cursor,
         viewport: &Rectangle,
     ) {
         if let Some(viewport) = layout.bounds().intersection(viewport) {
@@ -344,6 +297,13 @@ where
     }
 }
 
+struct ChildLayout {
+    column_start: u8,
+    column_end: u8,
+    row_start: u8,
+    row_end: u8,
+}
+
 impl<'a, Message, Theme, Renderer> From<Grid<'a, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
@@ -354,36 +314,4 @@ where
     fn from(row: Grid<'a, Message, Theme, Renderer>) -> Self {
         Self::new(row)
     }
-}
-
-/// The sizing strategy of a [`Grid`].
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Sizing {
-    /// The [`Grid`] will ensure each cell follows the given aspect ratio and the
-    /// total size will be the sum of the cells and the spacing between them.
-    ///
-    /// The ratio is the amount of horizontal pixels per each vertical pixel of a cell
-    /// in the [`Grid`].
-    AspectRatio(f32),
-
-    /// The [`Grid`] will evenly distribute the space available in the given [`Length`]
-    /// for each cell.
-    EvenlyDistribute(Length),
-}
-
-impl From<f32> for Sizing {
-    fn from(height: f32) -> Self {
-        Self::EvenlyDistribute(Length::from(height))
-    }
-}
-
-impl From<Length> for Sizing {
-    fn from(height: Length) -> Self {
-        Self::EvenlyDistribute(height)
-    }
-}
-
-/// Creates a new [`Sizing`] strategy that maintains the given aspect ratio.
-pub fn aspect_ratio(width: impl Into<Pixels>, height: impl Into<Pixels>) -> Sizing {
-    Sizing::AspectRatio(width.into().0 / height.into().0)
 }

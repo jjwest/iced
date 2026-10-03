@@ -10,6 +10,7 @@ use crate::core::widget::operation::{self, Operation};
 use crate::core::window;
 use crate::core::{Element, Length, Size, Widget};
 use crate::float::{self, Float};
+use crate::grid::Grid;
 use crate::keyed;
 use crate::lazy::Lazy;
 use crate::overlay;
@@ -26,7 +27,7 @@ use crate::toggler::{self, Toggler};
 use crate::tooltip::{self, Tooltip};
 use crate::transition::{self, Transition};
 use crate::vertical_slider::{self, VerticalSlider};
-use crate::{Column, Grid, MouseArea, Pin, Responsive, Row, Sensor, Space, Stack, Themer};
+use crate::{Column, DynamicGrid, MouseArea, Pin, Responsive, Row, Sensor, Space, Stack, Themer};
 
 use std::borrow::Borrow;
 use std::ops::RangeInclusive;
@@ -547,14 +548,22 @@ where
     Row::with_children(children)
 }
 
-/// Creates a new [`Grid`] from an iterator.
-pub fn grid<'a, Message, Theme, Renderer>(
+/// Creates a new [`DynamicGrid`] from an iterator.
+pub fn dynamic_grid<'a, Message, Theme, Renderer>(
     children: impl IntoIterator<Item = Element<'a, Message, Theme, Renderer>>,
-) -> Grid<'a, Message, Theme, Renderer>
+) -> DynamicGrid<'a, Message, Theme, Renderer>
 where
     Renderer: core::Renderer,
 {
-    Grid::with_children(children)
+    DynamicGrid::with_children(children)
+}
+
+/// Creates a new [`Grid`] from an iterator.
+pub fn grid<'a, Message, Theme, Renderer>() -> Grid<'a, Message, Theme, Renderer>
+where
+    Renderer: core::Renderer,
+{
+    Grid::new()
 }
 
 /// Creates a new [`Stack`] with the given children.
